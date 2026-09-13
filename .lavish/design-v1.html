@@ -23,6 +23,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-3xl sm:text-4xl font-bold">alienfx-tray</h1>
       <span class="badge badge-primary badge-soft">design v1</span>
+      <span class="badge badge-success">built, tested, committed</span>
       <span class="badge badge-ghost">m15 R7 AMD &middot; Plasma 6 / Wayland</span>
     </div>
     <p class="text-base-content/80 max-w-3xl">
@@ -35,47 +36,71 @@
   <section class="card card-border bg-base-100 border-warning">
     <div class="card-body gap-4">
       <div class="flex flex-wrap items-center gap-3">
-        <h2 class="card-title text-warning">Needs your eyes - external light IDs</h2>
-        <span class="badge badge-warning">1 open question</span>
+        <h2 class="card-title text-warning">Needs your eyes - one question left</h2>
+        <span class="badge badge-success badge-soft">2 of 3 zones confirmed</span>
       </div>
-      <p class="max-w-3xl">
-        The AW-ELC controller maps 23 light IDs, all placeholder-named <span class="mono">ext-00..ext-22</span>.
-        IDs 0-5 are the ones that drive visible lights. I have <strong>already set them to six distinct colours
-        on your machine</strong> and blacked out 6-22. Please look at the laptop and tell me which physical zone
-        shows which colour.
-      </p>
+
+      <p class="max-w-3xl">Thank you - your answers settled two of the three. Here is where that leaves things:</p>
 
       <div class="overflow-x-auto rounded-box border border-base-content/10">
         <table class="table table-zebra">
-          <thead>
-            <tr><th>Light ID</th><th>Colour set</th><th class="w-1/2">Which zone is showing it?</th></tr>
-          </thead>
+          <thead><tr><th>Light ID</th><th>Probe colour</th><th>You said</th><th>Status</th></tr></thead>
           <tbody>
-            <tr><td class="mono">ext-00</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ff0000"></span> red</div></td><td class="text-base-content/60">ring / lid logo / interior logo / nothing?</td></tr>
-            <tr><td class="mono">ext-01</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#00ff00"></span> green</div></td><td class="text-base-content/60">&hellip;</td></tr>
-            <tr><td class="mono">ext-02</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#0000ff"></span> blue</div></td><td class="text-base-content/60">&hellip;</td></tr>
-            <tr><td class="mono">ext-03</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ffff00"></span> yellow</div></td><td class="text-base-content/60">&hellip;</td></tr>
-            <tr><td class="mono">ext-04</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ff00ff"></span> magenta</div></td><td class="text-base-content/60">&hellip;</td></tr>
-            <tr><td class="mono">ext-05</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#00ffff"></span> cyan</div></td><td class="text-base-content/60">&hellip;</td></tr>
-            <tr><td class="mono">ext-06 .. ext-22</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#000"></span> off</div></td><td class="text-base-content/60">confirm nothing lit up here</td></tr>
+            <tr>
+              <td class="mono">2</td>
+              <td><div class="flex items-center gap-3"><span class="swatch" style="background:#0000ff"></span> blue</div></td>
+              <td>"inside alienware logo"</td>
+              <td><span class="badge badge-success badge-soft">Interior logo</span></td>
+            </tr>
+            <tr>
+              <td class="mono">3</td>
+              <td><div class="flex items-center gap-3"><span class="swatch" style="background:#ffff00"></span> yellow</div></td>
+              <td>"outside/external alienware logo"</td>
+              <td><span class="badge badge-success badge-soft">Lid logo</span></td>
+            </tr>
+            <tr class="bg-warning/10">
+              <td class="mono">1</td>
+              <td><div class="flex items-center gap-3"><span class="swatch" style="background:#00ff00"></span> green</div></td>
+              <td>"outside main light (ring) is green <strong>and yellow</strong>"</td>
+              <td><span class="badge badge-warning">Ring - provisional</span></td>
+            </tr>
+            <tr>
+              <td class="mono">0, 4, 5</td>
+              <td><div class="flex items-center gap-3"><span class="swatch" style="background:#ff0000"></span><span class="swatch" style="background:#ff00ff"></span><span class="swatch" style="background:#00ffff"></span></div></td>
+              <td class="opacity-60">not mentioned</td>
+              <td><span class="badge badge-ghost">Nothing visible</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      <div role="alert" class="alert alert-info alert-soft">
+      <div role="alert" class="alert alert-warning alert-soft">
         <span>
-          Nothing is written to device memory, so a reboot wipes the probe. A resume or a fresh login also
-          re-runs <span class="mono">alienfx-apply</span> and repaints everything purple. If that has already
-          happened, re-run the probe yourself:
-          <code class="mono block mt-2 p-2 rounded bg-base-300 text-sm overflow-x-auto">alienfx-tray --probe-external</code>
-          <span class="text-sm opacity-70">(or, before the app is installed, the same six
-          <span class="mono">alienfx setpower 1 &lt;id&gt; r g b r g b</span> calls)</span>
+          <strong>The ambiguity, stated plainly.</strong> You reported the ring showing green
+          <em>and</em> yellow, but yellow was also the lid logo. I am not going to guess which,
+          because all three readings are plausible: the ring and the lid logo might share ID 3;
+          the ring might be segmented across two IDs; or the lid logo may sit inside the ring
+          assembly and you described one fixture twice.
         </span>
       </div>
 
+      <div class="rounded-box bg-base-200 p-4 space-y-3">
+        <p class="font-semibold">What settles it - one ID at a time, everything else off</p>
+        <p class="text-sm opacity-85"><strong>I have already run the first one.</strong> Right now
+        external light ID 1 is white and every other external light is off. Look at the laptop:
+        <em>which fixture is lit, and is it the whole of that fixture or only part of it?</em></p>
+        <p class="text-sm opacity-85">If a reboot, a resume or a login has repainted everything
+        purple since, the probe is gone - nothing is written to device memory. Re-run it:</p>
+        <code class="mono block p-3 rounded bg-base-300 text-sm overflow-x-auto">alienfx-tray --probe-external=1     # then look
+alienfx-tray --probe-external=3     # then look again
+alienfx-tray --apply                # back to your normal scheme</code>
+        <p class="text-sm opacity-70">Two short looks and the last zone is named.</p>
+      </div>
+
       <p class="text-sm opacity-80">
-        Everything below is decided and being built. It does not block on this answer - the IDs only decide the
-        <em>names</em> shown next to each zone slider, which is a one-line config change once you tell me.
+        Nothing waits on this. ID 1 ships named <span class="mono">"Rear ring (provisional)"</span>
+        in the UI, and it is marked provisional in the code and the hardware notes too, so the open
+        question is visible rather than quietly guessed at. Your answer changes one label.
       </p>
     </div>
   </section>
@@ -118,8 +143,12 @@
     </div>
 
     <div role="alert" class="alert alert-success alert-soft">
-      <span>Free feature falling out of the hardware: the two colour slots mean the app can offer
-      <strong>"different colour on battery"</strong> at zero extra protocol cost. Shipping it in v1.</span>
+      <span>Free feature falling out of the hardware: the external lights' two colour slots mean the
+      app offers <strong>"different colour on battery"</strong> at zero extra protocol cost.
+      <span class="opacity-80">Correcting an earlier version of this board: that is an
+      <em>external-only</em> feature. APIv5's global-effect command does take two colour slots, but
+      the second is a per-effect parameter, not an AC/battery pair - so the keyboard carries a single
+      colour rather than a behaviour nobody has seen this device perform.</span></span>
     </div>
   </section>
 
@@ -393,10 +422,8 @@ static_assert(none_of(kAllKeyboardEffects, isZero));</code></pre>
                 <input type="range" class="range range-primary range-sm" value="70">
                 <div class="text-sm opacity-70">Brightness</div>
                 <input type="range" class="range range-sm" value="100">
-                <label class="label cursor-pointer justify-start gap-2 p-0">
-                  <input type="checkbox" class="checkbox checkbox-sm">
-                  <span class="label-text text-sm">Different colour on battery</span>
-                </label>
+                <div class="text-xs opacity-60">Per-zone colours and the battery colour live on the
+                External tab - they are properties of that controller, not this one.</div>
               </div>
             </div>
             <div role="alert" class="alert alert-error alert-soft py-2 text-sm">
@@ -406,6 +433,63 @@ static_assert(none_of(kAllKeyboardEffects, isZero));</code></pre>
           <p class="text-xs opacity-70">Every device problem surfaces as a per-domain banner. Nothing in the UI
           ever waits on USB, so a missing or wedged controller degrades to a message instead of a frozen window.</p>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================== WHAT THE BUILD TURNED UP ====================== -->
+  <section class="space-y-4">
+    <h2 class="text-2xl font-semibold">Two bugs the build turned up</h2>
+    <p class="max-w-3xl text-base-content/80">Both were found by driving the real binary against the
+    real machine, both have a reproduction script committed alongside the fix, and both were failing
+    before the fix and passing after.</p>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="card card-border bg-base-100 border-error/40">
+        <div class="card-body gap-2">
+          <h3 class="card-title text-base text-error">Your keyboard was already half-missing</h3>
+          <p class="text-sm">hidapi has to take the USB interface away from the kernel to talk to
+          either controller. Its code to give it back sits inside
+          <span class="mono">#ifdef DETACH_KERNEL_DRIVER</span> - a macro its own build never defines.
+          So every time anything on this stack closes a device, the interface is left with
+          <strong>no driver bound, indefinitely</strong>.</p>
+          <p class="text-sm">On this laptop that removes a real keyboard input device:
+          <span class="mono">"DELL Technologies Keyboard"</span>, handlers
+          <span class="mono">sysrq kbd leds</span>. I found both interfaces already unbound on your
+          machine when I started measuring.</p>
+          <p class="text-sm opacity-80"><strong>The reference CLI has this bug too</strong>, so it has
+          most likely been happening every time you have used it. The app now reattaches explicitly
+          after every close - and running it once repairs a machine already in that state.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100 border-error/40">
+        <div class="card-body gap-2">
+          <h3 class="card-title text-base text-error">Launching twice gave you two of them</h3>
+          <p class="text-sm">Qt's <span class="mono">QLocalServer</span> with
+          <span class="mono">UserAccessOption</span> does not actually give an exclusive name - it puts
+          the socket in a fresh private directory and repoints a symlink at it on every listen. A
+          second launch "succeeded" and sat there as a rival tray icon.</p>
+          <p class="text-sm">Two processes claiming the same two USB interfaces is precisely how a
+          keyboard ends up stuck claimed. It now binds an explicit path under
+          <span class="mono">XDG_RUNTIME_DIR</span>, and never clears a socket without first checking
+          whether anything is alive on it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-box bg-base-200 p-4">
+      <p class="font-semibold mb-2">Measured, not guessed</p>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead><tr><th>Operation</th><th>Cost</th><th>What it forced</th></tr></thead>
+          <tbody>
+            <tr><td>keyboard colour</td><td class="mono">~20 ms</td><td>live preview is genuinely live</td></tr>
+            <tr><td>external zone, first after open</td><td class="mono">~1600 ms</td><td>hold that controller for 20 s, not 1.5 s</td></tr>
+            <tr><td>external zone, subsequent</td><td class="mono">~175 ms</td><td>send only the zone that changed</td></tr>
+            <tr><td>six zones via six CLI calls</td><td class="mono">~11.6 s</td><td>why linking the SDK was the right call</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </section>
