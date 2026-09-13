@@ -55,15 +55,34 @@ class TestUsbReattach : public QObject {
     // The other half of "must not be swallowed": a domain whose lighting worked but whose
     // interface did not go back is still ready, and has to say what went wrong anyway.
     void aReadyDomainStillReportsAReleaseWarning() {
-        const DomainStatus clean{DeviceState::Ready, {}};
-        const std::string quiet = describe(Domain::Keyboard, clean);
-        QVERIFY(!quiet.empty());
+        DomainStatus warned{DeviceState::Ready, {}};
+        warned.interfaceLeftDetached = true;
 
-        const DomainStatus warned{DeviceState::Ready, "the interface is still detached"};
         const std::string noisy = describe(Domain::Keyboard, warned);
-        QVERIFY2(noisy != quiet, "a warning on a ready domain must not read the same as none");
-        QVERIFY(noisy.find("the interface is still detached") != std::string::npos);
         QVERIFY2(warned.ok(), "failing to release is not a lighting failure");
+        QVERIFY(noisy.find("Warning") != std::string::npos);
+        QVERIFY(noisy.find("kernel driver") != std::string::npos);
+    }
+
+    // The warning says nothing about the lighting, so it has to survive alongside whatever
+    // the lighting itself did rather than replacing it.
+    void aReleaseWarningSurvivesOnANonReadyDomain() {
+        DomainStatus warned{DeviceState::Error, "brightness command refused"};
+        warned.interfaceLeftDetached = true;
+
+        const std::string text = describe(Domain::External, warned);
+        QVERIFY(text.find("brightness command refused") != std::string::npos);
+        QVERIFY(text.find("kernel driver") != std::string::npos);
+    }
+
+    // An ordinary detail is information, not evidence of a fault. Reading a warning into
+    // its presence told the user something had gone wrong when nothing had.
+    void anOrdinaryDetailOnAReadyDomainIsNotAWarning() {
+        const DomainStatus plain{DeviceState::Ready, {}};
+        const DomainStatus informative{DeviceState::Ready, "no zones configured"};
+
+        QCOMPARE(describe(Domain::External, informative), describe(Domain::External, plain));
+        QVERIFY(describe(Domain::External, informative).find("Warning") == std::string::npos);
     }
 };
 

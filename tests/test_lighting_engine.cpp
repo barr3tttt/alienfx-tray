@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "core/device_interface.h"
 #include "core/lighting_engine.h"
 #include "core/scheme.h"
 #include "fake_devices.h"
@@ -128,6 +129,58 @@ class TestLightingEngine : public QObject {
         QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
         QCOMPARE(externalView->commitCount, 0);
         QVERIFY(result.keyboard.ok());
+    }
+
+    // A scheme with no zones never opens the external controller, so releasing it has
+    // nothing to report. Re-reading the device's status after the release used to overwrite
+    // the success with the never-opened Unknown, which turned a supported configuration
+    // into a reported failure and an --apply exit code of 1.
+    void releasingAnUnopenedDomainDoesNotUndoItsSuccess() {
+        Scheme scheme = defaultScheme();
+        scheme.external.zones.clear();
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        const ApplyResult result = engine.apply(scheme);
+        QVERIFY(result.external.ok());
+
+        engine.releaseDevices();
+        QCOMPARE(externalView->openCount, 0);
+
+        DomainStatus reported = result.external;
+        reported.interfaceLeftDetached = engine.interfaceLeftDetached(Domain::External);
+
+        QVERIFY2(reported.ok(), "a domain that never had to be opened still succeeded");
+        QVERIFY(!reported.interfaceLeftDetached);
+        QCOMPARE(describe(Domain::External, reported),
+                 describe(Domain::External, DomainStatus{DeviceState::Ready, {}}));
+        QVERIFY2(describe(Domain::External, reported).find("Warning") == std::string::npos,
+                 "a supported configuration must not be reported as a fault");
+    }
+
+    // The other half: a release that really did leave the interface driverless still has to
+    // reach the user, and must not be mistaken for a lighting failure.
+    void aFailedReleaseSurfacesWithoutDemotingTheDomain() {
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        keyboard->failReattachOnClose = true;
+        auto external = std::make_unique<FakeExternalDevice>();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        const ApplyResult result = engine.apply(defaultScheme());
+        QVERIFY(result.keyboard.ok());
+        QVERIFY2(!result.keyboard.interfaceLeftDetached, "nothing has been released yet");
+
+        engine.releaseDevices();
+
+        DomainStatus reported = result.keyboard;
+        reported.interfaceLeftDetached = engine.interfaceLeftDetached(Domain::Keyboard);
+
+        QVERIFY2(reported.ok(), "the lighting worked; only the release did not");
+        QVERIFY(reported.interfaceLeftDetached);
+        QVERIFY(describe(Domain::Keyboard, reported).find("Warning") != std::string::npos);
     }
 
     void aSchemeWithNoZonesIsNotAnError() {

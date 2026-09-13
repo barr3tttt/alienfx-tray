@@ -31,6 +31,7 @@ class FakeKeyboardDevice final : public IKeyboardDevice {
     void close() override {
         if (open_) ++closeCount;
         open_ = false;
+        status_.interfaceLeftDetached = failReattachOnClose;
     }
 
     [[nodiscard]] bool isOpen() const override { return open_; }
@@ -66,6 +67,9 @@ class FakeKeyboardDevice final : public IKeyboardDevice {
     bool failOpen = false;
     bool failBrightness = false;
     bool failEffect = false;
+    // Models the one failure close() can have: the handle goes back but the kernel driver
+    // does not, leaving the interface driverless.
+    bool failReattachOnClose = false;
 
    private:
     bool open_ = false;
@@ -98,6 +102,7 @@ class FakeExternalDevice final : public IExternalDevice {
     void close() override {
         if (open_) ++closeCount;
         open_ = false;
+        status_.interfaceLeftDetached = failReattachOnClose;
     }
 
     [[nodiscard]] bool isOpen() const override { return open_; }
@@ -139,6 +144,7 @@ class FakeExternalDevice final : public IExternalDevice {
     bool failOpen = false;
     bool failBrightness = false;
     bool failZone = false;
+    bool failReattachOnClose = false;
 
    private:
     bool open_ = false;

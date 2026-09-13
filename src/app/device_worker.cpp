@@ -110,9 +110,14 @@ void DeviceWorker::releaseIdleExternal() { releaseIdle(Domain::External); }
 void DeviceWorker::releaseIdle(Domain domain) {
     if (engine_) {
         engine_->releaseDevice(domain);
-        // Closing is where the kernel driver goes back, so the status can change here even
-        // though no lighting command ran. publishStatus only emits when it actually did.
-        publishStatus(domain, engine_->status(domain));
+
+        // Closing is where the kernel driver goes back, and that can fail on its own. No
+        // lighting command ran, so the last published state stands and only the warning
+        // crosses over. publishStatus emits only if that actually changed anything.
+        DomainStatus status =
+            domain == Domain::Keyboard ? lastKeyboardStatus_ : lastExternalStatus_;
+        status.interfaceLeftDetached = engine_->interfaceLeftDetached(domain);
+        publishStatus(domain, status);
     }
     releaseLockIfIdle();
 }

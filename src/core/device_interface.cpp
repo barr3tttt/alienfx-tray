@@ -22,24 +22,33 @@ std::string describe(Domain domain, const DomainStatus& status) {
     const std::string_view name =
         domain == Domain::Keyboard ? "Keyboard controller" : "External lighting controller";
 
+    std::string text = std::string(name) + " not checked yet.";
     switch (status.state) {
         case DeviceState::Ready:
-            // Ready carries a detail only when something went wrong that was not the
-            // lighting - releasing the USB interface, say - so it has to be shown.
-            return std::string(name) + " ready." +
-                   (status.detail.empty() ? "" : " Warning: " + status.detail + ".");
+            text = std::string(name) + " ready.";
+            break;
         case DeviceState::Missing:
-            return std::string(name) + " not found.";
+            text = std::string(name) + " not found.";
+            break;
         case DeviceState::Busy:
-            return std::string(name) +
+            text = std::string(name) +
                    " is busy - another process is holding it. Will retry on the next change.";
+            break;
         case DeviceState::Error:
-            return std::string(name) + " refused the last command" +
+            text = std::string(name) + " refused the last command" +
                    (status.detail.empty() ? "." : ": " + status.detail);
+            break;
         case DeviceState::Unknown:
             break;
     }
-    return std::string(name) + " not checked yet.";
+
+    // Orthogonal to the state: the lighting can have worked perfectly and the interface
+    // still not have gone back, which on this hardware costs a real keyboard input device
+    // until something reattaches it or the machine reboots.
+    if (status.interfaceLeftDetached)
+        text += " Warning: the USB interface may not have been handed back to its kernel "
+                "driver.";
+    return text;
 }
 
 }  // namespace alienfx

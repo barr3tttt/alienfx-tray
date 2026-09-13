@@ -24,6 +24,14 @@ struct DomainStatus {
     DeviceState state = DeviceState::Unknown;
     std::string detail;
 
+    // Set when closing could not hand the USB interface back to its kernel driver.
+    //
+    // A field of its own rather than a detail string, because a detail on a Ready status is
+    // ordinary information - "no zones configured" is a supported setup, not a fault - and
+    // reading meaning into its mere presence tells the user something broke when nothing
+    // did. Not a DeviceState either: the lighting worked, and only the release did not.
+    bool interfaceLeftDetached = false;
+
     [[nodiscard]] bool ok() const { return state == DeviceState::Ready; }
 
     friend bool operator==(const DomainStatus&, const DomainStatus&) = default;

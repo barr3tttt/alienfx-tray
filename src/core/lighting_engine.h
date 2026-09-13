@@ -54,9 +54,13 @@ class LightingEngine {
     [[nodiscard]] bool anyDeviceOpen() const;
     [[nodiscard]] bool isDeviceOpen(Domain domain) const;
 
-    // What a domain's device says about itself right now. Worth re-reading after a release:
-    // closing is where the kernel driver goes back, and that can fail on its own.
-    [[nodiscard]] DomainStatus status(Domain domain) const;
+    // Whether the last close of this domain left its USB interface without a kernel driver.
+    //
+    // Deliberately a bool and not the device's whole DomainStatus. Releasing says nothing
+    // about what the lighting did, and handing callers a status invited them to adopt it
+    // wholesale - which demoted a domain that succeeded without ever needing to be opened,
+    // because a device that was never opened reports Unknown. A bool cannot demote anything.
+    [[nodiscard]] bool interfaceLeftDetached(Domain domain) const;
 
    private:
     DomainStatus applyKeyboard(const KeyboardSettings& settings);
