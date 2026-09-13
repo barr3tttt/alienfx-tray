@@ -94,6 +94,9 @@ class LightingController : public QObject {
     DomainStatus keyboardBeforeWatchdog_;
     DomainStatus externalBeforeWatchdog_;
     bool watchdogTripped_ = false;
+    // The newest scheme handed to the worker. A slow apply that has already been superseded
+    // must not disarm the watchdog the apply after it is relying on.
+    quint64 pendingGeneration_ = 0;
 
     QThread* workerThread_ = nullptr;
     DeviceWorker* worker_ = nullptr;

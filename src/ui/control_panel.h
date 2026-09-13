@@ -45,6 +45,7 @@ class ControlPanel : public QWidget {
     void pushScheme();
     void refreshZoneEditor();
     void refreshSchemeList();
+    void refreshActiveSchemeMarker();
     void refreshStartupIntegration();
     [[nodiscard]] int selectedZoneIndex() const;
 

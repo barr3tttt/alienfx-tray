@@ -70,6 +70,10 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
             &ControlPanel::onStatusChanged);
     connect(&controller_, &LightingController::schemeChanged, this,
             &ControlPanel::refreshFromController);
+    // Activating a scheme moves the marker without changing the list, the same split the
+    // tray menu makes between rebuilding its actions and moving its tick.
+    connect(&controller_, &LightingController::schemeChanged, this,
+            &ControlPanel::refreshActiveSchemeMarker);
     connect(&controller_, &LightingController::schemeListChanged, this,
             &ControlPanel::refreshSchemeList);
 
@@ -378,13 +382,24 @@ void ControlPanel::refreshSchemeList() {
         const QString name = QString::fromStdString(scheme.name);
         auto* item = new QListWidgetItem(name, schemeList_);
         item->setData(Qt::UserRole, name);
-        if (scheme.name == controller_.config().activeSchemeName) {
-            QFont font = item->font();
-            font.setBold(true);
-            item->setFont(font);
-            item->setText(tr("%1  (active)").arg(name));
-        }
         if (name == previous) schemeList_->setCurrentItem(item);
+    }
+    refreshActiveSchemeMarker();
+}
+
+void ControlPanel::refreshActiveSchemeMarker() {
+    if (!schemeList_) return;
+    const QString active = QString::fromStdString(controller_.config().activeSchemeName);
+
+    for (int row = 0; row < schemeList_->count(); ++row) {
+        QListWidgetItem* item = schemeList_->item(row);
+        const QString name = schemeNameOf(item);
+        const bool isActive = name == active;
+
+        QFont font = item->font();
+        font.setBold(isActive);
+        item->setFont(font);
+        item->setText(isActive ? tr("%1  (active)").arg(name) : name);
     }
 }
 

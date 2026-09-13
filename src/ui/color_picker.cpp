@@ -277,8 +277,10 @@ void ColorPicker::showHex() {
     // Leave a half-typed entry that already means this colour alone. "#bd9" is a valid short
     // form, so expanding it to "#bbdd99" mid-keystroke fills the field to its maximum length
     // and the remaining characters of "#bd93f9" have nowhere to go.
+    // Compared as resolved 8-bit triples: QColor::operator== demands a matching colour spec
+    // first, and the wheel hands us Hsv colours while the field parses to Rgb ones.
     const QColor shown = parseHexField(hex_->text());
-    if (shown.isValid() && shown == color_) return;
+    if (shown.isValid() && shown.rgb() == color_.rgb()) return;
     hex_->setText(color_.name(QColor::HexRgb));
 }
 

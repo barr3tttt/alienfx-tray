@@ -43,17 +43,19 @@ void DeviceWorker::initialise() {
     QMetaObject::invokeMethod(this, &DeviceWorker::processPending, Qt::QueuedConnection);
 }
 
-void DeviceWorker::submit(const Scheme& scheme) {
+quint64 DeviceWorker::submit(const Scheme& scheme) {
+    quint64 generation = 0;
     {
         QMutexLocker locker(&mutex_);
-        if (shuttingDown_) return;
+        if (shuttingDown_) return generation_;
         pending_ = scheme;
-        ++generation_;
+        generation = ++generation_;
     }
     // One queued wake-up per burst. Everything that arrives before it runs is collapsed into
     // the single pending scheme above.
     if (!scheduled_.exchange(true))
         QMetaObject::invokeMethod(this, &DeviceWorker::processPending, Qt::QueuedConnection);
+    return generation;
 }
 
 void DeviceWorker::processPending() {

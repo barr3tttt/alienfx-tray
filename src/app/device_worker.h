@@ -57,8 +57,9 @@ class DeviceWorker : public QObject {
     // this frame. Short: a dropped preview frame is invisible, a stalled UI is not.
     static constexpr int kLockTimeoutMs = 750;
 
-    // Callable from any thread. Replaces whatever was pending.
-    void submit(const Scheme& scheme);
+    // Callable from any thread. Replaces whatever was pending and returns the generation
+    // the caller can expect back from applyFinished, so a superseded apply is recognisable.
+    quint64 submit(const Scheme& scheme);
 
    public slots:
     // Runs on the worker thread once it starts.

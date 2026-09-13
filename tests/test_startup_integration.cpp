@@ -157,6 +157,38 @@ class TestStartupIntegration : public QObject {
         }
     }
 
+    // The collision case the first attempt at this missed: a backup already exists, so the
+    // canonical path is taken, and the file about to be replaced is one nobody could read.
+    // Skipping the copy there destroyed it outright.
+    void anUnreadableScriptSurvivesEvenWhenABackupAlreadyExists() {
+        writeExecutable(applyShimPath(), kOriginalScript);
+
+        std::string error;
+        QVERIFY2(installStartupIntegration(error), error.c_str());
+        const IntegrationStatus backed = checkStartupIntegration();
+        QVERIFY(backed.backupExists);
+
+        const std::string replacement = "#!/bin/sh\n# a script nobody got to read\n";
+        writeExecutable(applyShimPath(), replacement);
+        std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_write |
+                                                          std::filesystem::perms::owner_exec);
+        if (checkStartupIntegration().shim != ShimState::Unreadable)
+            QSKIP("this user can read the file regardless of its mode");
+
+        const bool installed = installStartupIntegration(error);
+        std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_all);
+
+        QVERIFY2(readAll(backed.backupPath) == std::string(kOriginalScript),
+                 "the first backup is the original and must never be overwritten");
+
+        if (!installed) {
+            QVERIFY(!error.empty());
+            QCOMPARE(readAll(applyShimPath()), replacement);
+            return;
+        }
+        QCOMPARE(readAll(backed.backupPath.string() + ".1"), replacement);
+    }
+
     void removingRestoresWhatWasThereBefore() {
         writeExecutable(applyShimPath(), kOriginalScript);
 

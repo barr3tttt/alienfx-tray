@@ -61,7 +61,7 @@ DomainStatus LightingController::status(Domain domain) const {
 
 void LightingController::submitCurrent() {
     if (!worker_) return;
-    worker_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
+    pendingGeneration_ = worker_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
     if (watchdog_) watchdog_->start();
 }
 
@@ -125,7 +125,9 @@ void LightingController::onWorkerStatus(Domain domain, DomainStatus status) {
     emit statusChanged(domain, status);
 }
 
-void LightingController::onApplyFinished(quint64, bool) {
+void LightingController::onApplyFinished(quint64 generation, bool) {
+    if (generation < pendingGeneration_) return;
+
     if (watchdog_) watchdog_->stop();
     if (!watchdogTripped_) return;
 
