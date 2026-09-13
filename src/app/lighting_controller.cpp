@@ -1,0 +1,181 @@
+#include "app/lighting_controller.h"
+
+#include <QThread>
+#include <QTimer>
+
+#include "app/device_worker.h"
+
+namespace alienfx {
+
+LightingController::LightingController(QObject* parent) : QObject(parent) {
+    LoadResult loaded = loadConfig(configPath());
+    config_ = std::move(loaded.config);
+    if (!loaded.error.empty()) {
+        // A config we cannot read must never mean no lighting. Fall back to the defaults and
+        // say so in the UI rather than starting dark.
+        configError_ = QString::fromStdString(loaded.error);
+    }
+    working_ = config_.activeScheme();
+
+    // First run: write the defaults out straight away so there is a file to read and edit,
+    // and so `--apply` at login has something concrete rather than falling back every time.
+    if (!loaded.fileExisted) {
+        std::string error;
+        if (!saveConfig(config_, configPath(), error))
+            configError_ = QString::fromStdString(error);
+    }
+
+    saveTimer_ = new QTimer(this);
+    saveTimer_->setSingleShot(true);
+    saveTimer_->setInterval(kConfigSaveDebounceMs);
+    connect(saveTimer_, &QTimer::timeout, this, &LightingController::saveConfigNow);
+
+    watchdog_ = new QTimer(this);
+    watchdog_->setSingleShot(true);
+    watchdog_->setInterval(kApplyWatchdogMs);
+    connect(watchdog_, &QTimer::timeout, this, &LightingController::onApplyWatchdog);
+
+    // Deliberately unparented: if the worker cannot be stopped on the way out we leak the
+    // thread object rather than let ~QThread abort the process over a still-running thread.
+    workerThread_ = new QThread;
+    workerThread_->setObjectName("alienfx-device");
+    worker_ = new DeviceWorker;
+    worker_->moveToThread(workerThread_);
+
+    connect(workerThread_, &QThread::started, worker_, &DeviceWorker::initialise);
+    connect(workerThread_, &QThread::finished, worker_, &QObject::deleteLater);
+    connect(worker_, &DeviceWorker::statusChanged, this, &LightingController::onWorkerStatus);
+    connect(worker_, &DeviceWorker::applyFinished, this, &LightingController::onApplyFinished);
+
+    workerThread_->start();
+
+    // Paint what the config says as soon as we are up.
+    submitCurrent();
+}
+
+LightingController::~LightingController() { shutdown(); }
+
+DomainStatus LightingController::status(Domain domain) const {
+    return domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
+}
+
+void LightingController::submitCurrent() {
+    if (!worker_) return;
+    worker_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
+    if (watchdog_) watchdog_->start();
+}
+
+void LightingController::applyWorkingScheme(const Scheme& scheme) {
+    working_ = scheme;
+    config_.upsertScheme(working_);
+    config_.activeSchemeName = working_.name;
+    submitCurrent();
+    if (saveTimer_) saveTimer_->start();
+    emit schemeChanged();
+}
+
+void LightingController::activateScheme(const QString& name) {
+    const std::string key = name.toStdString();
+    const Scheme* scheme = config_.findScheme(key);
+    if (!scheme) return;
+
+    config_.activeSchemeName = key;
+    working_ = *scheme;
+    submitCurrent();
+    saveConfigNow();
+    emit schemeChanged();
+}
+
+void LightingController::setLightsOn(bool on) {
+    if (config_.lightsOn == on) return;
+    config_.lightsOn = on;
+    submitCurrent();
+    saveConfigNow();
+    emit lightsOnChanged(on);
+}
+
+void LightingController::saveWorkingSchemeAs(const QString& name) {
+    const std::string key = name.toStdString();
+    if (key.empty()) return;
+
+    Scheme scheme = working_;
+    scheme.name = key;
+    config_.upsertScheme(scheme);
+    config_.activeSchemeName = key;
+    working_ = scheme;
+    saveConfigNow();
+    emit schemeListChanged();
+    emit schemeChanged();
+}
+
+void LightingController::deleteScheme(const QString& name) {
+    if (config_.schemes.size() <= 1) return;  // never leave the user with nothing to pick
+    if (!config_.removeScheme(name.toStdString())) return;
+
+    working_ = config_.activeScheme();
+    submitCurrent();
+    saveConfigNow();
+    emit schemeListChanged();
+    emit schemeChanged();
+}
+
+void LightingController::reapply() { submitCurrent(); }
+
+void LightingController::onWorkerStatus(Domain domain, DomainStatus status) {
+    (domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_) = status;
+    emit statusChanged(domain, status);
+}
+
+void LightingController::onApplyFinished(quint64, bool) {
+    if (watchdog_) watchdog_->stop();
+}
+
+void LightingController::onApplyWatchdog() {
+    // The apply never came back. Rather than let the UI imply everything is fine, say what
+    // is actually true: the worker is stuck on a device that is not answering.
+    const DomainStatus stuck{DeviceState::Error, "controller stopped responding"};
+    for (Domain domain : kAllDomains) {
+        DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
+        if (slot.state == DeviceState::Ready || slot.state == DeviceState::Unknown) {
+            slot = stuck;
+            emit statusChanged(domain, slot);
+        }
+    }
+}
+
+void LightingController::saveConfigNow() {
+    if (saveTimer_) saveTimer_->stop();
+    std::string error;
+    if (!saveConfig(config_, configPath(), error))
+        configError_ = QString::fromStdString(error);
+}
+
+void LightingController::shutdown() {
+    if (shutdownDone_) return;
+    shutdownDone_ = true;
+
+    if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
+
+    // Queued, never blocking. If the worker is stuck inside a device call, a blocking
+    // invoke here would hang the quit - which is the exact failure this app must not have.
+    if (worker_) {
+        QMetaObject::invokeMethod(worker_, &DeviceWorker::shutdown, Qt::QueuedConnection);
+        worker_ = nullptr;  // owned by the thread's finished->deleteLater from here on
+    }
+
+    if (!workerThread_) return;
+
+    workerThread_->quit();
+    // Bounded wait. The SDK's APIv4 ready-wait can spin without a timeout of its own, and
+    // quitting must not depend on a wedged controller changing its mind. If the wait
+    // expires we exit anyway: the kernel reattaches usbhid when the usbfs descriptor
+    // closes, so the keyboard comes back either way.
+    if (workerThread_->wait(kShutdownWaitMs)) {
+        delete workerThread_;
+    } else {
+        qWarning("alienfx-tray: device worker did not stop in time; exiting without joining");
+    }
+    workerThread_ = nullptr;
+}
+
+}  // namespace alienfx

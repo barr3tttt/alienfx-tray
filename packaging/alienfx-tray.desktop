@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=AlienFX Lighting
+GenericName=RGB Lighting Control
+Comment=Control the keyboard and external RGB lighting on Alienware laptops
+Exec=alienfx-tray
+Icon=alienfx-tray
+Terminal=false
+Categories=Settings;HardwareSettings;Utility;
+Keywords=RGB;LED;Lighting;Alienware;AlienFX;Keyboard;
+StartupNotify=false
+X-GNOME-UsesNotifications=false

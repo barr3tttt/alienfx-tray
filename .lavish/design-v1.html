@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dracula">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>alienfx-tray - design v1</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<style>
+  body { overflow-x: hidden; }
+  .swatch { width: 2.25rem; height: 2.25rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,.25); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .lane { border-left: 2px solid var(--color-base-content); opacity: .9; }
+</style>
+</head>
+<body class="bg-base-200 text-base-content">
+
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-10">
+
+  <!-- ====================== HEADER ====================== -->
+  <header class="space-y-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <h1 class="text-3xl sm:text-4xl font-bold">alienfx-tray</h1>
+      <span class="badge badge-primary badge-soft">design v1</span>
+      <span class="badge badge-ghost">m15 R7 AMD &middot; Plasma 6 / Wayland</span>
+    </div>
+    <p class="text-base-content/80 max-w-3xl">
+      A native Qt6 tray app that drives both AlienFX controllers directly through the linked SDK.
+      The acceptance test is one sentence: <em>lighting should never be a reason to reboot into Windows.</em>
+    </p>
+  </header>
+
+  <!-- ====================== THE ASK ====================== -->
+  <section class="card card-border bg-base-100 border-warning">
+    <div class="card-body gap-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="card-title text-warning">Needs your eyes - external light IDs</h2>
+        <span class="badge badge-warning">1 open question</span>
+      </div>
+      <p class="max-w-3xl">
+        The AW-ELC controller maps 23 light IDs, all placeholder-named <span class="mono">ext-00..ext-22</span>.
+        IDs 0-5 are the ones that drive visible lights. I have <strong>already set them to six distinct colours
+        on your machine</strong> and blacked out 6-22. Please look at the laptop and tell me which physical zone
+        shows which colour.
+      </p>
+
+      <div class="overflow-x-auto rounded-box border border-base-content/10">
+        <table class="table table-zebra">
+          <thead>
+            <tr><th>Light ID</th><th>Colour set</th><th class="w-1/2">Which zone is showing it?</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">ext-00</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ff0000"></span> red</div></td><td class="text-base-content/60">ring / lid logo / interior logo / nothing?</td></tr>
+            <tr><td class="mono">ext-01</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#00ff00"></span> green</div></td><td class="text-base-content/60">&hellip;</td></tr>
+            <tr><td class="mono">ext-02</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#0000ff"></span> blue</div></td><td class="text-base-content/60">&hellip;</td></tr>
+            <tr><td class="mono">ext-03</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ffff00"></span> yellow</div></td><td class="text-base-content/60">&hellip;</td></tr>
+            <tr><td class="mono">ext-04</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#ff00ff"></span> magenta</div></td><td class="text-base-content/60">&hellip;</td></tr>
+            <tr><td class="mono">ext-05</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#00ffff"></span> cyan</div></td><td class="text-base-content/60">&hellip;</td></tr>
+            <tr><td class="mono">ext-06 .. ext-22</td><td><div class="flex items-center gap-3"><span class="swatch" style="background:#000"></span> off</div></td><td class="text-base-content/60">confirm nothing lit up here</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div role="alert" class="alert alert-info alert-soft">
+        <span>
+          Nothing is written to device memory, so a reboot wipes the probe. A resume or a fresh login also
+          re-runs <span class="mono">alienfx-apply</span> and repaints everything purple. If that has already
+          happened, re-run the probe yourself:
+          <code class="mono block mt-2 p-2 rounded bg-base-300 text-sm overflow-x-auto">alienfx-tray --probe-external</code>
+          <span class="text-sm opacity-70">(or, before the app is installed, the same six
+          <span class="mono">alienfx setpower 1 &lt;id&gt; r g b r g b</span> calls)</span>
+        </span>
+      </div>
+
+      <p class="text-sm opacity-80">
+        Everything below is decided and being built. It does not block on this answer - the IDs only decide the
+        <em>names</em> shown next to each zone slider, which is a one-line config change once you tell me.
+      </p>
+    </div>
+  </section>
+
+  <!-- ====================== HARDWARE MODEL ====================== -->
+  <section class="space-y-4">
+    <h2 class="text-2xl font-semibold">Two controllers, two protocols</h2>
+    <p class="max-w-3xl text-base-content/80">
+      This is the fact that makes every online guide for this laptop contradict itself. The app models them as two
+      independent domains all the way down - separate state, separate error reporting, separate failure.
+    </p>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="card-title text-lg">Keyboard <span class="badge badge-secondary badge-sm">APIv5</span></h3>
+          <div class="text-sm space-y-1 mono">
+            <div>Darfon 0d62:cabc</div>
+            <div>64-byte feature report, report ID 0xCC</div>
+            <div>SetGlobalEffects(effType, mode, nc, tempo, c1, c2)</div>
+          </div>
+          <div class="divider my-1"></div>
+          <p class="text-sm">One global colour for the whole keyboard. No per-zone: the device reports
+          <strong>0 lights</strong>. Per-key is a later probe, not v1.</p>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="card-title text-lg">External <span class="badge badge-accent badge-sm">APIv4</span></h3>
+          <div class="text-sm space-y-1 mono">
+            <div>Alienware AW-ELC 187c:0550</div>
+            <div>33-byte reports, vendor page 0xFF00</div>
+            <div>SetPowerAction(lightblock) per light ID</div>
+          </div>
+          <div class="divider my-1"></div>
+          <p class="text-sm">Power-type lights: each carries <strong>two</strong> colours, AC and battery.
+          <span class="mono">SetColor</span> across all 23 IDs does literally nothing - it has to be the power path.</p>
+        </div>
+      </div>
+    </div>
+
+    <div role="alert" class="alert alert-success alert-soft">
+      <span>Free feature falling out of the hardware: the two colour slots mean the app can offer
+      <strong>"different colour on battery"</strong> at zero extra protocol cost. Shipping it in v1.</span>
+    </div>
+  </section>
+
+  <!-- ====================== THE HARD GUARD ====================== -->
+  <section class="card card-border bg-base-100 border-error">
+    <div class="card-body gap-4">
+      <h2 class="card-title text-error">The trap, and how it is made unreachable</h2>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <div class="space-y-2 min-w-0">
+          <p class="text-sm font-semibold opacity-70">What goes wrong</p>
+          <pre class="mockup-code text-xs overflow-x-auto"><code>// AlienFX_SDK.cpp, SetGlobalEffects, API_V5
+if (!effType)
+    PrepareAndSend(COMMV5_setEffect, {{2, {1, 0xfe}}});</code></pre>
+          <p class="text-sm">effType 0 sends a clear/disable. The keyboard goes dark in a state
+          <span class="mono">setall</span> cannot override. External lights keep responding, so it looks like a
+          half-dead machine. Recovery is a non-zero effType or a reboot.</p>
+        </div>
+        <div class="space-y-2 min-w-0">
+          <p class="text-sm font-semibold opacity-70">Why the UI cannot emit it</p>
+          <pre class="mockup-code text-xs overflow-x-auto"><code>enum class KeyboardEffect : std::uint8_t {
+    Steady = 1,   // confirmed on hardware
+};
+// every enumerator asserted non-zero at compile time
+static_assert(none_of(kAllKeyboardEffects, isZero));</code></pre>
+          <p class="text-sm">The effect type is a <strong>scoped enum with no zero enumerator</strong>. There is no
+          <span class="mono">uint8_t</span> overload anywhere in the device layer, so "pass 0" is not a value the
+          call site can express - not a runtime <span class="mono">if</span> somebody can delete.</p>
+        </div>
+      </div>
+
+      <div class="divider my-0"></div>
+      <p class="text-sm font-semibold opacity-70">Three layers of cover</p>
+      <ul class="list-disc ml-5 space-y-1 text-sm">
+        <li><strong>Compile time</strong> - a static_assert over the full enumerator list fails the build the day
+        someone adds <span class="mono">Off = 0</span>.</li>
+        <li><strong>Unit test</strong> - every scheme permutation, including "all off" and pure black, is applied
+        through a fake transport that records every byte. The test asserts effType is never 0.</li>
+        <li><strong>Semantics</strong> - "off" is implemented as <em>Steady + black</em>, never as a disable, and
+        brightness is clamped to a 1..255 type so no slider can reach the hardware-off path either.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ====================== KEYBOARD CLAIM HAZARD ====================== -->
+  <section class="card card-border bg-base-100 border-warning">
+    <div class="card-body gap-3">
+      <h2 class="card-title text-warning">The other hazard: claiming the device is claiming your keyboard</h2>
+      <p class="max-w-3xl text-sm">
+        I confirmed the topology on the machine. The Darfon device has exactly <strong>one</strong> USB interface:
+      </p>
+      <pre class="mockup-code text-xs overflow-x-auto"><code>5-1  0d62:cabc  iface 5-1:1.0  driver=usbhid  class=03  proto=01  &lt;- 01 = keyboard</code></pre>
+      <p class="max-w-3xl text-sm">
+        The SDK's hidapi is built with the libusb backend, so opening it <strong>detaches usbhid from the
+        interface you actually type on</strong>. There is no separate LED interface to claim instead. A leaked
+        claim means the built-in keyboard stops working.
+      </p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div class="rounded-box bg-base-200 p-3 text-sm space-y-1">
+          <p class="font-semibold">Worse still</p>
+          <p class="opacity-80"><span class="mono">Mappings::AlienFXEnumDevices()</span> calls
+          <span class="mono">hid_enumerate(0,0)</span> and opens <em>every</em> matching path, then throws the
+          duplicates away. Every full enumeration briefly kills typing.</p>
+        </div>
+        <div class="rounded-box bg-base-200 p-3 text-sm space-y-1">
+          <p class="font-semibold">So the app does not use it</p>
+          <p class="opacity-80">It owns its own <span class="mono">libusb_context</span>, resolves the one path it
+          wants once, and constructs <span class="mono">Functions</span> via
+          <span class="mono">AlienFXProbeDevice(ctx, vid, pid, path)</span> directly. Exactly one interface is
+          ever claimed.</p>
+        </div>
+      </div>
+      <ul class="list-disc ml-5 space-y-1 text-sm">
+        <li>Handles are opened lazily on first write and <strong>closed after 1.5 s idle</strong>, so a claim never
+        outlives an interaction.</li>
+        <li>During a slider drag the handle stays open - you are dragging a mouse, not typing - and closes as soon
+        as the drag settles.</li>
+        <li>Close happens in a RAII guard, on the worker's stop path, and on <span class="mono">SIGTERM</span>/
+        <span class="mono">SIGINT</span>. If the process is killed outright, the kernel reattaches usbhid when the
+        usbfs fd closes, so the worst case is still recoverable without a reboot.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ====================== DECISIONS ====================== -->
+  <section class="space-y-4">
+    <h2 class="text-2xl font-semibold">Decisions you asked me to make deliberately</h2>
+
+    <!-- vendor vs submodule -->
+    <div class="card card-border bg-base-100">
+      <div class="card-body gap-3">
+        <h3 class="card-title text-lg">1. Vendor or submodule the SDK?</h3>
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-box border border-success/50 bg-success/10 p-3 space-y-1">
+            <div class="flex items-center gap-2"><span class="badge badge-success badge-sm">chosen</span><span class="font-semibold">Submodule, pinned</span></div>
+            <p class="text-sm opacity-90">Upstream is alive and is the only thing on the internet that drives both
+            controllers. A submodule keeps provenance, makes every bump an explicit reviewable commit, and keeps
+            ~4k lines of somebody else's C++ out of our diffs.</p>
+          </div>
+          <div class="rounded-box border border-base-content/10 p-3 space-y-1">
+            <div class="font-semibold">Vendor a copy</div>
+            <p class="text-sm opacity-70">Offline-friendly and patchable in place, but we would silently fork a
+            project we want to track, and every upstream fix becomes a manual merge.</p>
+          </div>
+          <div class="rounded-box border border-base-content/10 p-3 space-y-1">
+            <div class="font-semibold">Shell out to alienfx-cli</div>
+            <p class="text-sm opacity-70">Rejected outright. A process per colour change makes a slider drag feel
+            like mud and throws away every error the device reports.</p>
+          </div>
+        </div>
+        <div role="alert" class="alert alert-warning alert-soft text-sm">
+          <span>The catch: the SDK's <span class="mono">FetchContent</span> pulls libusb, hidapi, loguru and json
+          from <span class="mono">master</span>/<span class="mono">main</span>. Unpinned upstreams mean the build
+          breaks on someone else's Tuesday. Fixed without patching the submodule: we declare all four with pinned
+          tags in our top-level CMakeLists <em>before</em> adding the subdirectory, and CMake's
+          first-declaration-wins rule makes ours stick.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- threading -->
+    <div class="card card-border bg-base-100">
+      <div class="card-body gap-3">
+        <h3 class="card-title text-lg">2. Threading model for live preview</h3>
+        <p class="text-sm max-w-3xl">One <span class="mono">DeviceWorker</span> thread owns every SDK object and
+        every USB handle. The GUI thread never touches libusb, and the worker never touches a widget. They talk
+        only in queued signals carrying plain value types.</p>
+
+        <div class="overflow-x-auto">
+          <div class="min-w-[560px] grid grid-cols-[1fr_auto_1fr] gap-4 items-stretch py-2">
+            <div class="rounded-box bg-base-200 p-4 space-y-2">
+              <div class="font-semibold">GUI thread</div>
+              <ul class="text-sm space-y-1 opacity-85 list-disc ml-4">
+                <li>tray icon, control panel</li>
+                <li>colour wheel drag &rarr; emits at most 1 request / 16 ms</li>
+                <li>renders device status banners</li>
+                <li><strong>never blocks</strong>, never waits on the worker</li>
+              </ul>
+            </div>
+            <div class="flex flex-col items-center justify-center gap-2 px-2">
+              <span class="badge badge-primary badge-soft whitespace-nowrap">applyRequested(Scheme)</span>
+              <div class="text-2xl">&rarr;</div>
+              <div class="text-2xl">&larr;</div>
+              <span class="badge badge-accent badge-soft whitespace-nowrap">statusChanged(Domain, State)</span>
+            </div>
+            <div class="rounded-box bg-base-200 p-4 space-y-2">
+              <div class="font-semibold">DeviceWorker thread</div>
+              <ul class="text-sm space-y-1 opacity-85 list-disc ml-4">
+                <li>owns libusb ctx + both handles</li>
+                <li>latest-wins coalescing, older frames dropped</li>
+                <li>1.5 s idle timer closes handles</li>
+                <li>per-domain failure, never a shared crash</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-sm max-w-3xl"><strong>Why latest-wins matters:</strong> an external apply is ~36 HID report
+        exchanges for six lights (the v4 power path walks cid 0x5b..0x60 per light), call it 50-100 ms. A drag
+        generates far more frames than that. Queued signals would pile up and the lights would lag seconds behind
+        the cursor. Instead the worker keeps a single pending scheme under a mutex with a generation counter and
+        skips anything stale, so the lights always converge on where the cursor <em>is</em>.</p>
+      </div>
+    </div>
+
+    <!-- storage -->
+    <div class="card card-border bg-base-100">
+      <div class="card-body gap-3">
+        <h3 class="card-title text-lg">3. How schemes are stored</h3>
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="space-y-2">
+            <pre class="mockup-code text-xs overflow-x-auto"><code>~/.config/alienfx-tray/
+  schemes.json     named schemes
+  active.json      what is on right now</code></pre>
+            <p class="text-sm">Plain JSON, schema-versioned, written atomically (temp + rename) so a crash mid-save
+            cannot leave an unparseable file. An unreadable file falls back to a built-in default rather than
+            starting with no lighting at all.</p>
+          </div>
+          <div class="space-y-2 text-sm">
+            <p class="font-semibold">What it deliberately does not do</p>
+            <ul class="list-disc ml-4 space-y-1 opacity-85">
+              <li>Does not touch <span class="mono">~/.local/share/alienfx/mappings.json</span> - that belongs to
+              the CLI and stays working.</li>
+              <li>Does not implement <span class="mono">-s</span> / save-to-device-memory <em>at all</em>. Login and
+              resume already repaint, so persistence buys nothing and costs the one property that makes this safe
+              to experiment with: a reboot always restores firmware defaults.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- login + resume -->
+    <div class="card card-border bg-base-100">
+      <div class="card-body gap-3">
+        <h3 class="card-title text-lg">4. Login and resume - reusing what is already installed</h3>
+        <p class="text-sm max-w-3xl">No second startup mechanism. The existing user unit and the existing
+        system-sleep hook both already call one script, so that script becomes the single seam.</p>
+
+        <div class="overflow-x-auto">
+          <div class="min-w-[620px] flex items-center gap-3 py-3 text-sm">
+            <div class="rounded-box bg-base-200 p-3 flex-1 text-center">
+              <div class="font-semibold">login</div>
+              <div class="mono text-xs opacity-70">alienfx.service</div>
+            </div>
+            <div class="text-xl">&searr;</div>
+            <div class="rounded-box bg-primary/15 border border-primary/40 p-3 flex-1 text-center">
+              <div class="font-semibold mono">~/.local/bin/alienfx-apply</div>
+              <div class="text-xs opacity-70">unchanged path, now a shim</div>
+            </div>
+            <div class="text-xl">&swarr;</div>
+            <div class="rounded-box bg-base-200 p-3 flex-1 text-center">
+              <div class="font-semibold">resume</div>
+              <div class="mono text-xs opacity-70">system-sleep/alienfx</div>
+            </div>
+          </div>
+        </div>
+
+        <pre class="mockup-code text-xs overflow-x-auto"><code>exec alienfx-tray --apply        # applies active.json, no GUI, exits
+# falls back to the original CLI block if the binary is missing</code></pre>
+
+        <ul class="list-disc ml-5 space-y-1 text-sm">
+          <li>The unit and the sleep hook are <strong>not edited</strong>. Neither is the user systemd manager -
+          it has no <span class="mono">suspend.target</span>, which is exactly why the system-level hook exists.</li>
+          <li>Rewriting the shim is a <strong>button in the UI</strong>, never automatic, and it backs the original
+          up to <span class="mono">alienfx-apply.pre-tray.bak</span> first.</li>
+          <li><span class="mono">--apply</span> and the running tray take the same <span class="mono">flock</span>
+          on <span class="mono">$XDG_RUNTIME_DIR</span>, so a resume firing while the panel is open cannot have two
+          processes fighting over one USB claim.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================== UI ====================== -->
+  <section class="space-y-4">
+    <h2 class="text-2xl font-semibold">What it looks like</h2>
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <h3 class="card-title text-lg">Right-click - quick menu</h3>
+          <ul class="menu bg-base-200 rounded-box w-full">
+            <li class="menu-title">Schemes</li>
+            <li><a>Dracula purple <span class="badge badge-primary badge-xs">active</span></a></li>
+            <li><a>Cool white</a></li>
+            <li><a>Battery amber</a></li>
+            <li></li>
+            <li><a class="flex justify-between">Lights <input type="checkbox" class="toggle toggle-sm toggle-primary" checked></a></li>
+            <li><a>Performance mode &raquo;</a></li>
+            <li><a>Open control panel&hellip;</a></li>
+            <li><a>Quit</a></li>
+          </ul>
+          <p class="text-xs opacity-70">Left-click opens the panel. Plasma 6 on Wayland gets this through
+          StatusNotifierItem, which Qt's QSystemTrayIcon speaks natively - no KF6 dependency needed.</p>
+        </div>
+      </div>
+
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-3">
+          <h3 class="card-title text-lg">Left-click - control panel</h3>
+          <div class="rounded-box bg-base-200 p-4 space-y-4">
+            <div role="tablist" class="tabs tabs-box tabs-sm">
+              <a role="tab" class="tab tab-active">Keyboard</a>
+              <a role="tab" class="tab">External</a>
+              <a role="tab" class="tab">Schemes</a>
+            </div>
+            <div class="flex gap-4 items-center">
+              <div class="w-24 h-24 rounded-full shrink-0" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)"></div>
+              <div class="flex-1 min-w-0 space-y-2">
+                <div class="text-sm opacity-70">Colour</div>
+                <input type="range" class="range range-primary range-sm" value="70">
+                <div class="text-sm opacity-70">Brightness</div>
+                <input type="range" class="range range-sm" value="100">
+                <label class="label cursor-pointer justify-start gap-2 p-0">
+                  <input type="checkbox" class="checkbox checkbox-sm">
+                  <span class="label-text text-sm">Different colour on battery</span>
+                </label>
+              </div>
+            </div>
+            <div role="alert" class="alert alert-error alert-soft py-2 text-sm">
+              <span>External controller busy - another process is holding it. Retrying.</span>
+            </div>
+          </div>
+          <p class="text-xs opacity-70">Every device problem surfaces as a per-domain banner. Nothing in the UI
+          ever waits on USB, so a missing or wedged controller degrades to a message instead of a frozen window.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====================== SCOPE ====================== -->
+  <section class="space-y-4">
+    <h2 class="text-2xl font-semibold">Scope</h2>
+    <div class="grid gap-4 md:grid-cols-3">
+      <div class="card card-border bg-base-100 border-success/40">
+        <div class="card-body gap-2">
+          <h3 class="font-semibold text-success">v1 - building now</h3>
+          <ul class="list-disc ml-4 text-sm space-y-1 opacity-90">
+            <li>tray icon, left/right click</li>
+            <li>keyboard + external as separate domains</li>
+            <li>colour wheel with live preview</li>
+            <li>per-zone external colours</li>
+            <li>AC vs battery colours</li>
+            <li>named schemes, switchable from the tray</li>
+            <li>login + resume via the existing shim</li>
+            <li>per-domain degradation, no hangs</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100">
+        <div class="card-body gap-2">
+          <h3 class="font-semibold">stretch - if v1 is solid</h3>
+          <ul class="list-disc ml-4 text-sm space-y-1 opacity-80">
+            <li><span class="mono">platform_profile</span> switching in the tray menu (the AWCC performance modes
+            the WMI driver does expose)</li>
+            <li>probe keyboard depth 0x88 for per-key</li>
+            <li>additional non-zero effTypes, once each is confirmed on hardware</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card card-border bg-base-100 border-error/30">
+        <div class="card-body gap-2">
+          <h3 class="font-semibold text-error">explicitly not doing</h3>
+          <ul class="list-disc ml-4 text-sm space-y-1 opacity-80">
+            <li>writing device memory (<span class="mono">-s</span>)</li>
+            <li>a second login or resume mechanism</li>
+            <li>a user unit for resume - the user manager has no
+            <span class="mono">suspend.target</span>, so it would silently never fire</li>
+            <li>touching the CLI's mappings.json</li>
+            <li>shipping effect types nobody has seen work</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="pt-4 pb-10 text-sm opacity-60">
+    Everything on this board except the external ID question is decided and under construction.
+  </footer>
+</div>
+</body>
+</html>
