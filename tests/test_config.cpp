@@ -134,6 +134,66 @@ class TestConfig : public QObject {
             QVERIFY2(result.config.findScheme(builtin.name) != nullptr, builtin.name.c_str());
     }
 
+    // Delete has to mean delete. The re-seed exists so an accidental colour-wheel drag can
+    // never destroy a shipped preset; it must not also undo a deliberate deletion.
+    void aDeletedBuiltInStaysDeletedAcrossALoad() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        Config config = Config::defaults();
+        const std::string deleted = builtinSchemes().back().name;
+        QVERIFY(config.removeScheme(deleted));
+
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+        QVERIFY2(result.config.findScheme(deleted) == nullptr,
+                 "a scheme the user deleted came back on the next load");
+        for (const Scheme& builtin : builtinSchemes())
+            if (builtin.name != deleted)
+                QVERIFY2(result.config.findScheme(builtin.name) != nullptr,
+                         builtin.name.c_str());
+    }
+
+    // The other half of the same invariant: editing in place still cannot destroy a preset.
+    void aBuiltInEditedInPlaceStillComesBackWhenItsNameIsGone() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        Config config = Config::defaults();
+        const std::string edited = builtinSchemes().front().name;
+        config.findScheme(edited)->keyboard.color = Rgb{1, 1, 1};
+        QVERIFY(config.removeScheme(edited));
+        config.removedBuiltins.clear();  // renamed away from, not deliberately deleted
+
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+        QVERIFY(loadConfig(path).config.findScheme(edited) != nullptr);
+    }
+
+    void savingOverADeletedBuiltInNameMakesItUsableAgain() {
+        Config config = Config::defaults();
+        const std::string name = builtinSchemes().back().name;
+        QVERIFY(config.removeScheme(name));
+        QVERIFY(!config.removedBuiltins.empty());
+
+        Scheme mine = defaultScheme();
+        mine.name = name;
+        mine.keyboard.color = Rgb{4, 4, 4};
+        config.upsertScheme(mine);
+        QVERIFY2(config.removedBuiltins.empty(),
+                 "saving under the name should clear the record of its deletion");
+
+        config.restoreMissingBuiltins();
+        QCOMPARE(config.findScheme(name)->keyboard.color, (Rgb{4, 4, 4}));
+    }
+
     void aUserSchemeSharingABuiltInNameIsNeverOverwritten() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

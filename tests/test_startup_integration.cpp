@@ -135,7 +135,8 @@ class TestStartupIntegration : public QObject {
     }
 
     // A file we could not read is the one case where losing it is unrecoverable: nobody ever
-    // saw what was in it. Either it survives as a backup, or the install refuses outright.
+    // saw what was in it, and copying it would fail for the same reason the read did. The
+    // install has to refuse and say so rather than replace it.
     void anUnreadableScriptIsNeverDestroyed() {
         writeExecutable(applyShimPath(), kOriginalScript);
         std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_write |
@@ -145,21 +146,16 @@ class TestStartupIntegration : public QObject {
 
         std::string error;
         const bool installed = installStartupIntegration(error);
-
         std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_all);
-        const IntegrationStatus status = checkStartupIntegration();
-        if (installed) {
-            QVERIFY2(status.backupExists, "the original was replaced without keeping a copy");
-            QCOMPARE(readAll(status.backupPath), std::string(kOriginalScript));
-        } else {
-            QVERIFY(!error.empty());
-            QCOMPARE(readAll(applyShimPath()), std::string(kOriginalScript));
-        }
+
+        QVERIFY2(!installed, "a file whose contents could not be read must not be replaced");
+        QVERIFY2(error.find(applyShimPath().string()) != std::string::npos,
+                 "the refusal has to name the file standing in the way");
+        QCOMPARE(readAll(applyShimPath()), std::string(kOriginalScript));
     }
 
-    // The collision case the first attempt at this missed: a backup already exists, so the
-    // canonical path is taken, and the file about to be replaced is one nobody could read.
-    // Skipping the copy there destroyed it outright.
+    // The collision case: a backup already exists, so the canonical path is taken, and the
+    // file about to be replaced is one nobody could read. Skipping the copy destroyed it.
     void anUnreadableScriptSurvivesEvenWhenABackupAlreadyExists() {
         writeExecutable(applyShimPath(), kOriginalScript);
 
@@ -180,13 +176,10 @@ class TestStartupIntegration : public QObject {
 
         QVERIFY2(readAll(backed.backupPath) == std::string(kOriginalScript),
                  "the first backup is the original and must never be overwritten");
-
-        if (!installed) {
-            QVERIFY(!error.empty());
-            QCOMPARE(readAll(applyShimPath()), replacement);
-            return;
-        }
-        QCOMPARE(readAll(backed.backupPath.string() + ".1"), replacement);
+        QVERIFY2(!installed, "a file whose contents could not be read must not be replaced");
+        QVERIFY2(error.find(applyShimPath().string()) != std::string::npos,
+                 "the refusal has to name the file standing in the way");
+        QCOMPARE(readAll(applyShimPath()), replacement);
     }
 
     void removingRestoresWhatWasThereBefore() {

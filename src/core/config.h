@@ -20,6 +20,10 @@ struct Config {
     std::vector<Scheme> schemes;
     std::string activeSchemeName;
     bool lightsOn = true;
+    // Built-in names the user deleted on purpose. Without a record of the intent the
+    // re-seed below would undo every Delete on the next launch, so the button would work
+    // for user schemes and silently not stick for the three shipped ones.
+    std::vector<std::string> removedBuiltins;
 
     [[nodiscard]] const Scheme* findScheme(const std::string& name) const;
     [[nodiscard]] Scheme* findScheme(const std::string& name);
@@ -33,10 +37,11 @@ struct Config {
     bool upsertScheme(const Scheme& scheme);
     bool removeScheme(const std::string& name);
 
-    // Adds back any built-in scheme whose name is no longer present, leaving everything
-    // else alone. Editing a scheme in place rewrites it, so without this a drag of the
-    // colour wheel would destroy a shipped preset with no way back short of deleting the
-    // config file. Never overwrites: a user scheme that shares a built-in name wins.
+    // Adds back any built-in scheme whose name is neither present nor deliberately removed,
+    // leaving everything else alone. Editing a scheme in place rewrites it, so without this
+    // a drag of the colour wheel would destroy a shipped preset with no way back short of
+    // deleting the config file. Never overwrites: a user scheme that shares a built-in name
+    // wins, and a name in removedBuiltins is not re-seeded at all.
     void restoreMissingBuiltins();
 
     [[nodiscard]] static Config defaults();

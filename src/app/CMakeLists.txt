@@ -7,6 +7,7 @@ qt_standard_project_setup()
 qt_add_executable(alienfx-tray
   ../main.cpp
   apply_mode.cpp
+  cli_options.cpp
   device_worker.cpp
   lighting_controller.cpp
   metatypes.cpp
@@ -39,6 +40,7 @@ install(TARGETS alienfx-tray RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # The GUI-free pieces, so the test suite can exercise them without a display.
 add_library(alienfx_app STATIC
   apply_mode.cpp
+  cli_options.cpp
   process_lock.cpp
   startup_integration.cpp)
 target_link_libraries(alienfx_app PUBLIC alienfx_device)

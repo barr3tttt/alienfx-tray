@@ -1,14 +1,12 @@
 #include <QApplication>
 #include <QMessageBox>
 
-#include <charconv>
 #include <iostream>
-#include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
 #include "app/apply_mode.h"
+#include "app/cli_options.h"
 #include "app/lighting_controller.h"
 #include "app/metatypes.h"
 #include "app/signal_handler.h"
@@ -34,18 +32,6 @@ void printUsage(std::ostream& out) {
         << "--apply is what the login unit and the resume hook run. It needs no display.\n";
 }
 
-std::optional<int> parseTrailingId(std::string_view argument) {
-    const std::size_t equals = argument.find('=');
-    if (equals == std::string_view::npos) return std::nullopt;
-
-    const std::string_view digits = argument.substr(equals + 1);
-    int value = 0;
-    const auto* begin = digits.data();
-    const auto [ptr, ec] = std::from_chars(begin, begin + digits.size(), value);
-    if (ec != std::errc{} || ptr != begin + digits.size()) return std::nullopt;
-    return value;
-}
-
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -54,30 +40,26 @@ int main(int argc, char* argv[]) {
     // Headless modes are handled before any QApplication exists. The resume hook runs from a
     // root sleep script with no DISPLAY, no WAYLAND_DISPLAY and no session bus, so --apply
     // must not need a GUI toolkit connection to work.
-    for (std::string_view argument : arguments) {
-        if (argument == "--help" || argument == "-h") {
+    const alienfx::CliRequest request = alienfx::parseCommandLine(arguments);
+    switch (request.mode) {
+        case alienfx::CliMode::Help:
             printUsage(std::cout);
             return 0;
-        }
-        if (argument == "--version") {
+        case alienfx::CliMode::Version:
             std::cout << kVersion << "\n";
             return 0;
-        }
-        if (argument == "--apply") return alienfx::runApplyMode(std::cout, std::cerr);
-        if (argument == "--off") return alienfx::runOffMode(std::cout, std::cerr);
-        if (argument == "--probe-external")
-            return alienfx::runProbeExternalMode(std::nullopt, std::cout, std::cerr);
-        if (argument.starts_with("--probe-external=")) {
-            const std::optional<int> id = parseTrailingId(argument);
-            if (!id) {
-                std::cerr << "alienfx-tray: expected --probe-external=<number>\n";
-                return 2;
-            }
-            return alienfx::runProbeExternalMode(id, std::cout, std::cerr);
-        }
-        // Anything else belongs to QApplication. Qt's own standard options are real - an
-        // X11 session manager restores this process with `-session <id>` - and a tray that
-        // refuses to start on session restore is one nobody can rely on.
+        case alienfx::CliMode::Apply:
+            return alienfx::runApplyMode(std::cout, std::cerr);
+        case alienfx::CliMode::Off:
+            return alienfx::runOffMode(std::cout, std::cerr);
+        case alienfx::CliMode::ProbeExternal:
+            return alienfx::runProbeExternalMode(request.probeLightId, std::cout, std::cerr);
+        case alienfx::CliMode::Error:
+            std::cerr << "alienfx-tray: " << request.message << "\n\n";
+            printUsage(std::cerr);
+            return 2;
+        case alienfx::CliMode::Tray:
+            break;
     }
 
     QApplication app(argc, argv);

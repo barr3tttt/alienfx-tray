@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -36,6 +37,12 @@ std::string readString(const json& object, const char* key, std::string fallback
 json readMember(const json& object, const char* key) {
     const auto it = object.find(key);
     return it != object.end() ? *it : json{};
+}
+
+bool isBuiltinSchemeName(const std::string& name) {
+    for (const Scheme& builtin : builtinSchemes())
+        if (builtin.name == name) return true;
+    return false;
 }
 
 json encodeColor(Rgb color) { return toHex(color); }
@@ -154,6 +161,10 @@ Scheme Config::activeScheme() const {
 LightingState Config::lightingState() const { return LightingState{activeScheme(), lightsOn}; }
 
 bool Config::upsertScheme(const Scheme& scheme) {
+    // Saving under a name that was deleted brings it back as a live scheme, so the old
+    // deletion must stop suppressing the re-seed and the name becomes usable again.
+    std::erase(removedBuiltins, scheme.name);
+
     if (Scheme* existing = findScheme(scheme.name)) {
         *existing = scheme;
         return true;
@@ -167,14 +178,22 @@ bool Config::removeScheme(const std::string& name) {
         if (it->name != name) continue;
         schemes.erase(it);
         if (activeSchemeName == name) activeSchemeName = schemes.empty() ? "" : schemes.front().name;
+        // A deliberate delete has to outlive the restart, or the re-seed puts the shipped
+        // preset straight back and Delete only appears to work.
+        const bool alreadyRecorded =
+            std::ranges::find(removedBuiltins, name) != removedBuiltins.end();
+        if (isBuiltinSchemeName(name) && !alreadyRecorded) removedBuiltins.push_back(name);
         return true;
     }
     return false;
 }
 
 void Config::restoreMissingBuiltins() {
-    for (const Scheme& builtin : builtinSchemes())
-        if (!findScheme(builtin.name)) schemes.push_back(builtin);
+    for (const Scheme& builtin : builtinSchemes()) {
+        if (findScheme(builtin.name)) continue;
+        if (std::ranges::find(removedBuiltins, builtin.name) != removedBuiltins.end()) continue;
+        schemes.push_back(builtin);
+    }
 }
 
 Config Config::defaults() {
@@ -199,9 +218,13 @@ std::string serializeConfig(const Config& config) {
     json schemes = json::array();
     for (const Scheme& scheme : config.schemes) schemes.push_back(encodeScheme(scheme));
 
+    json removed = json::array();
+    for (const std::string& name : config.removedBuiltins) removed.push_back(name);
+
     json root{{"schemaVersion", Config::kSchemaVersion},
               {"activeScheme", config.activeSchemeName},
               {"lightsOn", config.lightsOn},
+              {"removedBuiltins", std::move(removed)},
               {"schemes", std::move(schemes)}};
     return root.dump(2) + "\n";
 }
@@ -229,6 +252,11 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
     if (config.schemes.empty()) {
         error = "config contains no usable schemes";
         return false;
+    }
+
+    if (root.contains("removedBuiltins") && root["removedBuiltins"].is_array()) {
+        for (const json& entry : root["removedBuiltins"])
+            if (entry.is_string()) config.removedBuiltins.push_back(entry.get<std::string>());
     }
 
     config.activeSchemeName = readString(root, "activeScheme", config.schemes.front().name);
@@ -260,9 +288,8 @@ LoadResult loadConfig(const std::filesystem::path& path) {
         return result;
     }
     result.config = std::move(parsed);
-    // Built-ins are re-seeded rather than merged: editing a scheme in place is the model, so
-    // the only way back to a shipped preset is to delete the version you edited and have it
-    // reappear. A user scheme that happens to share the name is never touched.
+    // Built-ins are re-seeded rather than merged, so editing one in place can never destroy
+    // it for good. Deleting one is a different intent and is recorded, so it stays deleted.
     result.config.restoreMissingBuiltins();
     return result;
 }

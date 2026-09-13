@@ -23,6 +23,23 @@
 namespace alienfx::ui {
 namespace {
 
+// Holds the panel's write-back suppressed while a refresh populates the widgets, and puts
+// the flag back the way it found it. Nestable on purpose: zoneList_->clear() emits
+// currentRowChanged, which refreshes the zone editor from inside an outer refresh, and an
+// inner scope ending must not re-enable edit propagation the outer one is relying on.
+class LoadingScope {
+   public:
+    explicit LoadingScope(bool& flag) : flag_(flag), previous_(flag) { flag_ = true; }
+    ~LoadingScope() { flag_ = previous_; }
+
+    LoadingScope(const LoadingScope&) = delete;
+    LoadingScope& operator=(const LoadingScope&) = delete;
+
+   private:
+    bool& flag_;
+    bool previous_;
+};
+
 // Scheme list items show "name  (active)" but must still report the real name.
 QString schemeNameOf(const QListWidgetItem* item) {
     return item ? item->data(Qt::UserRole).toString() : QString();
@@ -324,31 +341,33 @@ void ControlPanel::refreshFromController() {
     const bool sameZones = incoming.external.zones.size() == working_.external.zones.size();
     working_ = incoming;
 
-    loading_ = true;
-    keyboardColor_->setColor(toQColor(working_.keyboard.color));
-    keyboardBrightness_->setValue(working_.keyboard.brightness.percent());
-    keyboardBrightnessValue_->setText(
-        QStringLiteral("%1%").arg(working_.keyboard.brightness.percent()));
-    for (int i = 0; i < keyboardEffect_->count(); ++i) {
-        if (keyboardEffect_->itemData(i).toInt() == static_cast<int>(working_.keyboard.effect)) {
-            keyboardEffect_->setCurrentIndex(i);
-            break;
+    {
+        LoadingScope loading(loading_);
+        keyboardColor_->setColor(toQColor(working_.keyboard.color));
+        keyboardBrightness_->setValue(working_.keyboard.brightness.percent());
+        keyboardBrightnessValue_->setText(
+            QStringLiteral("%1%").arg(working_.keyboard.brightness.percent()));
+        for (int i = 0; i < keyboardEffect_->count(); ++i) {
+            if (keyboardEffect_->itemData(i).toInt() ==
+                static_cast<int>(working_.keyboard.effect)) {
+                keyboardEffect_->setCurrentIndex(i);
+                break;
+            }
         }
-    }
 
-    externalBrightness_->setValue(working_.external.brightness.percent());
-    externalBrightnessValue_->setText(
-        QStringLiteral("%1%").arg(working_.external.brightness.percent()));
+        externalBrightness_->setValue(working_.external.brightness.percent());
+        externalBrightnessValue_->setText(
+            QStringLiteral("%1%").arg(working_.external.brightness.percent()));
 
-    const int previousRow = zoneList_->currentRow();
-    zoneList_->clear();
-    for (const ExternalZone& zone : working_.external.zones) {
-        auto* item = new QListWidgetItem(QString::fromStdString(zone.name), zoneList_);
-        item->setFlags(item->flags() | Qt::ItemIsEditable);
+        const int previousRow = zoneList_->currentRow();
+        zoneList_->clear();
+        for (const ExternalZone& zone : working_.external.zones) {
+            auto* item = new QListWidgetItem(QString::fromStdString(zone.name), zoneList_);
+            item->setFlags(item->flags() | Qt::ItemIsEditable);
+        }
+        if (zoneList_->count() > 0)
+            zoneList_->setCurrentRow(sameZones && previousRow >= 0 ? previousRow : 0);
     }
-    if (zoneList_->count() > 0)
-        zoneList_->setCurrentRow(sameZones && previousRow >= 0 ? previousRow : 0);
-    loading_ = false;
 
     refreshZoneEditor();
 }
@@ -360,7 +379,7 @@ void ControlPanel::refreshZoneEditor() {
     zoneColor_->setEnabled(valid);
     zoneSeparateBattery_->setEnabled(valid);
 
-    loading_ = true;
+    LoadingScope loading(loading_);
     if (valid) {
         const ColorPair& pair = working_.external.zones[static_cast<std::size_t>(index)].color;
         zoneColor_->setColor(toQColor(pair.ac));
@@ -370,7 +389,6 @@ void ControlPanel::refreshZoneEditor() {
     } else {
         zoneBatteryColor_->setEnabled(false);
     }
-    loading_ = false;
 }
 
 void ControlPanel::refreshSchemeList() {
