@@ -103,13 +103,17 @@ void DeviceWorker::publishStatus(Domain domain, const DomainStatus& status) {
     emit statusChanged(domain, status);
 }
 
-void DeviceWorker::releaseIdleKeyboard() {
-    if (engine_) engine_->releaseDevice(Domain::Keyboard);
-    releaseLockIfIdle();
-}
+void DeviceWorker::releaseIdleKeyboard() { releaseIdle(Domain::Keyboard); }
 
-void DeviceWorker::releaseIdleExternal() {
-    if (engine_) engine_->releaseDevice(Domain::External);
+void DeviceWorker::releaseIdleExternal() { releaseIdle(Domain::External); }
+
+void DeviceWorker::releaseIdle(Domain domain) {
+    if (engine_) {
+        engine_->releaseDevice(domain);
+        // Closing is where the kernel driver goes back, so the status can change here even
+        // though no lighting command ran. publishStatus only emits when it actually did.
+        publishStatus(domain, engine_->status(domain));
+    }
     releaseLockIfIdle();
 }
 

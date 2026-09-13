@@ -54,6 +54,10 @@ class LightingEngine {
     [[nodiscard]] bool anyDeviceOpen() const;
     [[nodiscard]] bool isDeviceOpen(Domain domain) const;
 
+    // What a domain's device says about itself right now. Worth re-reading after a release:
+    // closing is where the kernel driver goes back, and that can fail on its own.
+    [[nodiscard]] DomainStatus status(Domain domain) const;
+
    private:
     DomainStatus applyKeyboard(const KeyboardSettings& settings);
     DomainStatus applyExternal(const ExternalSettings& settings);

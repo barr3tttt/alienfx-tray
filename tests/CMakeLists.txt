@@ -20,3 +20,7 @@ alienfx_add_test(test_lighting_engine alienfx_core)
 alienfx_add_test(test_config alienfx_core)
 alienfx_add_test(test_startup_integration alienfx_app)
 alienfx_add_test(test_cli_options alienfx_app)
+
+# The kernel-driver reattach reporting. tests/e2e/kernel-driver-reattach.sh drives the real
+# binary and asserts the happy-path sysfs end state, so it cannot reach the error branch.
+alienfx_add_test(test_usb_reattach alienfx_core)

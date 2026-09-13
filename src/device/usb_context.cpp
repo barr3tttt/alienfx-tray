@@ -46,15 +46,28 @@ bool UsbContext::reattachKernelDriver(std::uint16_t vendorId, std::uint16_t prod
         if (descriptor.idVendor != vendorId || descriptor.idProduct != productId) continue;
 
         libusb_config_descriptor* config = nullptr;
-        if (libusb_get_config_descriptor(devices[i], 0, &config) != 0) continue;
+        if (libusb_get_config_descriptor(devices[i], 0, &config) != 0) {
+            // A device we matched but cannot enumerate. Its interfaces are unaccounted for,
+            // which is not the same as handed back.
+            reattachedAll = false;
+            continue;
+        }
 
         libusb_device_handle* handle = nullptr;
         if (libusb_open(devices[i], &handle) == 0) {
             for (int interface = 0; interface < config->bNumInterfaces; ++interface) {
-                // 0 means "no kernel driver attached", which is exactly the state we are
-                // here to undo. 1 means one is already attached and there is nothing to do.
-                if (libusb_kernel_driver_active(handle, interface) != 0) continue;
-                if (libusb_attach_kernel_driver(handle, interface) != 0) reattachedAll = false;
+                const int active = libusb_kernel_driver_active(handle, interface);
+                switch (classifyKernelDriverActive(active)) {
+                    case KernelDriverState::Attached:
+                        break;
+                    case KernelDriverState::Detached:
+                        if (libusb_attach_kernel_driver(handle, interface) != 0)
+                            reattachedAll = false;
+                        break;
+                    case KernelDriverState::Unknown:
+                        reattachedAll = false;
+                        break;
+                }
             }
             libusb_close(handle);
         } else {

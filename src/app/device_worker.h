@@ -78,6 +78,7 @@ class DeviceWorker : public QObject {
 
    private:
     void publishStatus(Domain domain, const DomainStatus& status);
+    void releaseIdle(Domain domain);
     // The lock is only meaningful while a handle is open, so it goes back with the last one.
     void releaseLockIfIdle();
 

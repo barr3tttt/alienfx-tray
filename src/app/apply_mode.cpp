@@ -62,6 +62,13 @@ int applyWithRetry(const Scheme& scheme, std::ostream& out, std::ostream& err) {
     // is the user's actual typing device.
     engine.releaseDevices();
 
+    // Handing them back can itself fail, and that is only known once the close has run. A
+    // domain that lit up correctly stays a success; the warning rides along in its detail.
+    for (Domain domain : kAllDomains) {
+        DomainStatus& status = domain == Domain::Keyboard ? result.keyboard : result.external;
+        if (status.ok()) status = engine.status(domain);
+    }
+
     for (Domain domain : kAllDomains) {
         const DomainStatus& status = result.forDomain(domain);
         if (status.ok())

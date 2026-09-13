@@ -118,8 +118,16 @@ void ColorWheel::pick(const QPointF& position) {
     const qreal hue = std::fmod(qRadiansToDegrees(std::atan2(dy, dx)) + 360.0, 360.0);
     const qreal saturation = clamp01(std::hypot(dx, dy) / radius);
 
-    QColor picked = QColor::fromHsvF(hue / 360.0, saturation, color_.valueF());
-    if (picked == color_) return;
+    // Clicking a hue means the user wants that hue. Re-using a value of 0 would emit black
+    // whatever they clicked, which is indistinguishable from a dead control, so the click
+    // brings the colour back up out of black; the shade bar is right there to darken it
+    // again. Turning the lights off is the Lights toggle, not a picker state.
+    const qreal value = color_.valueF() > 0.0 ? color_.valueF() : 1.0;
+
+    QColor picked = QColor::fromHsvF(hue / 360.0, saturation, value);
+    // Resolved triples, not QColor::operator==, which demands a matching colour spec and so
+    // would let an unchanged colour through here while suppressing nothing.
+    if (picked.rgb() == color_.rgb()) return;
 
     color_ = picked;
     update();

@@ -24,7 +24,10 @@ std::string describe(Domain domain, const DomainStatus& status) {
 
     switch (status.state) {
         case DeviceState::Ready:
-            return std::string(name) + " ready.";
+            // Ready carries a detail only when something went wrong that was not the
+            // lighting - releasing the USB interface, say - so it has to be shown.
+            return std::string(name) + " ready." +
+                   (status.detail.empty() ? "" : " Warning: " + status.detail + ".");
         case DeviceState::Missing:
             return std::string(name) + " not found.";
         case DeviceState::Busy:

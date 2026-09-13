@@ -145,6 +145,11 @@ bool LightingEngine::anyDeviceOpen() const {
     return isDeviceOpen(Domain::Keyboard) || isDeviceOpen(Domain::External);
 }
 
+DomainStatus LightingEngine::status(Domain domain) const {
+    if (domain == Domain::Keyboard) return keyboard_ ? keyboard_->status() : DomainStatus{};
+    return external_ ? external_->status() : DomainStatus{};
+}
+
 bool LightingEngine::isDeviceOpen(Domain domain) const {
     if (domain == Domain::Keyboard) return keyboard_ && keyboard_->isOpen();
     return external_ && external_->isOpen();

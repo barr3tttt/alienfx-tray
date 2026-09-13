@@ -270,10 +270,10 @@ QWidget* ControlPanel::buildSchemesTab() {
     auto* buttons = new QHBoxLayout;
     auto* activate = new QPushButton(tr("Activate"), page);
     auto* saveAs = new QPushButton(tr("Save current as..."), page);
-    auto* remove = new QPushButton(tr("Delete"), page);
+    removeScheme_ = new QPushButton(tr("Delete"), page);
     buttons->addWidget(activate);
     buttons->addWidget(saveAs);
-    buttons->addWidget(remove);
+    buttons->addWidget(removeScheme_);
     layout->addLayout(buttons);
 
     auto* startup = new QGroupBox(tr("Apply at login and after resume"), page);
@@ -301,7 +301,7 @@ QWidget* ControlPanel::buildSchemesTab() {
         if (accepted && !name.trimmed().isEmpty())
             controller_.saveWorkingSchemeAs(name.trimmed());
     });
-    connect(remove, &QPushButton::clicked, this, [this] {
+    connect(removeScheme_, &QPushButton::clicked, this, [this] {
         const QString name = schemeNameOf(schemeList_->currentItem());
         if (name.isEmpty()) return;
         const auto answer = QMessageBox::question(
@@ -370,6 +370,7 @@ void ControlPanel::refreshFromController() {
     }
 
     refreshZoneEditor();
+    refreshDeleteButton();
 }
 
 void ControlPanel::refreshZoneEditor() {
@@ -403,6 +404,19 @@ void ControlPanel::refreshSchemeList() {
         if (name == previous) schemeList_->setCurrentItem(item);
     }
     refreshActiveSchemeMarker();
+    refreshDeleteButton();
+}
+
+// LightingController::deleteScheme refuses to remove the last scheme, and it has to stay
+// that way - but the user must never confirm a prompt for something that then does nothing.
+void ControlPanel::refreshDeleteButton() {
+    if (!removeScheme_) return;
+    const bool canDelete = controller_.config().schemes.size() > 1;
+
+    removeScheme_->setEnabled(canDelete);
+    removeScheme_->setToolTip(canDelete ? tr("Delete the selected scheme.")
+                                        : tr("The last scheme cannot be deleted - there "
+                                             "would be nothing left to apply."));
 }
 
 void ControlPanel::refreshActiveSchemeMarker() {

@@ -46,6 +46,7 @@ class ControlPanel : public QWidget {
     void refreshZoneEditor();
     void refreshSchemeList();
     void refreshActiveSchemeMarker();
+    void refreshDeleteButton();
     void refreshStartupIntegration();
     [[nodiscard]] int selectedZoneIndex() const;
 
@@ -70,6 +71,7 @@ class ControlPanel : public QWidget {
 
     // Schemes tab
     QListWidget* schemeList_ = nullptr;
+    QPushButton* removeScheme_ = nullptr;
     QLabel* startupStatus_ = nullptr;
     QPushButton* startupToggle_ = nullptr;
 

@@ -19,6 +19,11 @@ constexpr std::uint8_t kGlobalEffectMode = 0;
 constexpr std::uint8_t kGlobalEffectColorCount = 1;
 constexpr std::uint8_t kGlobalEffectTempo = 5;
 
+// Said in the status detail when an interface could not be handed back to its kernel
+// driver. Closing still succeeds; this is how the UI and --apply get to say it happened.
+constexpr const char* kReattachFailedDetail =
+    "the USB interface may not have been handed back to its kernel driver";
+
 // APIv4 power-light action parameters, as the CLI sends them.
 constexpr std::uint8_t kPowerActionTime = 3;
 constexpr std::uint8_t kPowerActionTempo = 0x64;
@@ -91,9 +96,18 @@ void SdkDeviceBase::close() {
     // interface stays driverless until a reboot. Reattaching is therefore ours to do, and it
     // has to happen every single time a handle closes.
     device_.reset();
-    context_.reattachKernelDriver(id_.vendorId, id_.productId);
+    const bool reattached = context_.reattachKernelDriver(id_.vendorId, id_.productId);
 
     if (status_.state == DeviceState::Ready) status_.detail.clear();
+
+    // Releasing the handle always happens, so close() never fails - but a driverless
+    // interface costs the user a working keyboard until it is reattached or the machine
+    // reboots, which is far too expensive to close over in silence. The state is left
+    // alone because the lighting itself is not what went wrong.
+    if (!reattached) {
+        if (!status_.detail.empty()) status_.detail += "; ";
+        status_.detail += kReattachFailedDetail;
+    }
 }
 
 void SdkDeviceBase::markReady() { status_ = DomainStatus{DeviceState::Ready, {}}; }
