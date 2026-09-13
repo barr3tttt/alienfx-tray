@@ -33,6 +33,13 @@ struct IntegrationStatus {
     bool backupExists = false;
 
     [[nodiscard]] bool isManaged() const { return shim == ShimState::Managed; }
+
+    // Anything present that is not ours has to be preserved before it is replaced. An
+    // unreadable file counts twice over: its contents were never inspected, so losing it
+    // would be the one unrecoverable outcome here.
+    [[nodiscard]] bool needsBackup() const {
+        return shim == ShimState::Foreign || shim == ShimState::Unreadable;
+    }
     [[nodiscard]] std::string summary() const;
 };
 

@@ -94,6 +94,7 @@ class ColorPicker : public QWidget {
 
    private:
     void applyColor(const QColor& color, bool fromHexField);
+    void showHex();
 
     ColorWheel* wheel_ = nullptr;
     ShadeBar* shade_ = nullptr;

@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include <cstdlib>
@@ -25,6 +26,11 @@ void writeExecutable(const std::filesystem::path& path, const std::string& text)
     std::filesystem::permissions(path, std::filesystem::perms::owner_all);
 }
 
+// A stand-in for a real program, which records that it ran and with which arguments.
+std::string recordingScript(const std::filesystem::path& log) {
+    return "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + log.string() + "'\nexit 0\n";
+}
+
 constexpr const char* kOriginalScript = "#!/usr/bin/env bash\n# the original CLI script\n";
 
 }  // namespace
@@ -32,6 +38,10 @@ constexpr const char* kOriginalScript = "#!/usr/bin/env bash\n# the original CLI
 // The whole point of this component is that it adds no startup mechanism of its own: it
 // makes the script that the already-installed login unit and resume hook both call delegate
 // here instead. These tests run against a throwaway HOME.
+//
+// The shim is a generated executable, so the tests that care what it does run it, with a
+// recording stub standing in for the tray binary. Reading the script and looking for words
+// in it would pass just as happily on a script that never executes them.
 class TestStartupIntegration : public QObject {
     Q_OBJECT
 
@@ -71,16 +81,35 @@ class TestStartupIntegration : public QObject {
         QVERIFY(status.backupExists);
         QCOMPARE(readAll(status.backupPath), std::string(kOriginalScript));
 
-        const std::string installed = readAll(status.shimPath);
-        QVERIFY(looksManaged(installed));
-        QVERIFY(installed.find("--apply") != std::string::npos);
-        // The fallback matters: if the binary is ever removed, login must still light up.
-        QVERIFY(installed.find("alienfx-apply.pre-tray.bak") != std::string::npos);
-
         // Executable, or neither the login unit nor the sleep hook can run it.
         const auto permissions = std::filesystem::status(status.shimPath).permissions();
         QVERIFY((permissions & std::filesystem::perms::owner_exec) !=
                 std::filesystem::perms::none);
+
+        const std::filesystem::path log = home() / "tray-argv";
+        const std::filesystem::path trayBin = home() / "stub-alienfx-tray";
+        writeExecutable(trayBin, recordingScript(log));
+
+        QCOMPARE(runInstalledShim(trayBin), 0);
+        QCOMPARE(readAll(log), std::string("--apply\n"));
+    }
+
+    // The fallback matters: if the binary is ever removed, login must still light up.
+    void theShimRunsTheBackupWhenTheBinaryHasGone() {
+        const std::filesystem::path log = home() / "original-ran";
+        writeExecutable(applyShimPath(), recordingScript(log));
+
+        std::string error;
+        QVERIFY2(installStartupIntegration(error), error.c_str());
+
+        QCOMPARE(runInstalledShim(home() / "not-installed"), 0);
+        QCOMPARE(readAll(log), std::string("\n"));
+    }
+
+    void theShimFailsLoudlyWhenThereIsNothingToRun() {
+        std::string error;
+        QVERIFY2(installStartupIntegration(error), error.c_str());
+        QCOMPARE(runInstalledShim(home() / "not-installed"), 1);
     }
 
     void installingIsIdempotentAndNeverOverwritesTheFirstBackup() {
@@ -103,6 +132,29 @@ class TestStartupIntegration : public QObject {
         const IntegrationStatus status = checkStartupIntegration();
         QCOMPARE(asInt(status.shim), asInt(ShimState::Managed));
         QVERIFY2(!status.backupExists, "there was nothing to back up");
+    }
+
+    // A file we could not read is the one case where losing it is unrecoverable: nobody ever
+    // saw what was in it. Either it survives as a backup, or the install refuses outright.
+    void anUnreadableScriptIsNeverDestroyed() {
+        writeExecutable(applyShimPath(), kOriginalScript);
+        std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_write |
+                                                          std::filesystem::perms::owner_exec);
+        if (checkStartupIntegration().shim != ShimState::Unreadable)
+            QSKIP("this user can read the file regardless of its mode");
+
+        std::string error;
+        const bool installed = installStartupIntegration(error);
+
+        std::filesystem::permissions(applyShimPath(), std::filesystem::perms::owner_all);
+        const IntegrationStatus status = checkStartupIntegration();
+        if (installed) {
+            QVERIFY2(status.backupExists, "the original was replaced without keeping a copy");
+            QCOMPARE(readAll(status.backupPath), std::string(kOriginalScript));
+        } else {
+            QVERIFY(!error.empty());
+            QCOMPARE(readAll(applyShimPath()), std::string(kOriginalScript));
+        }
     }
 
     void removingRestoresWhatWasThereBefore() {
@@ -134,22 +186,56 @@ class TestStartupIntegration : public QObject {
     }
 
     // The shim must not reach outside the two hooks that already exist. If this ever starts
-    // writing a systemd unit, that is a second startup mechanism and the design says no.
+    // enabling a systemd unit, that is a second startup mechanism and the design says no.
     void theShimInstallsNoUnitAndNoHook() {
         std::string error;
         QVERIFY(installStartupIntegration(error));
 
-        const std::filesystem::path home(qgetenv("HOME").toStdString());
-        QVERIFY(!std::filesystem::exists(home / ".config" / "systemd" / "user" /
+        QVERIFY(!std::filesystem::exists(home() / ".config" / "systemd" / "user" /
                                          "alienfx-tray.service"));
-        QVERIFY(!std::filesystem::exists(home / ".config" / "autostart"));
+        QVERIFY(!std::filesystem::exists(home() / ".config" / "autostart"));
 
-        const std::string installed = readAll(applyShimPath());
-        QVERIFY2(installed.find("systemctl") == std::string::npos,
+        const std::filesystem::path trayBin = home() / "stub-alienfx-tray";
+        writeExecutable(trayBin, recordingScript(home() / "tray-argv"));
+
+        // Anything the shim shells out to would be found here first.
+        const std::filesystem::path systemctlLog = home() / "systemctl-called";
+        writeExecutable(home() / "intercept" / "systemctl", recordingScript(systemctlLog));
+
+        QCOMPARE(runInstalledShim(trayBin, home() / "intercept"), 0);
+        QVERIFY2(!std::filesystem::exists(systemctlLog),
                  "the shim must not enable anything of its own");
     }
 
    private:
+    [[nodiscard]] std::filesystem::path home() const {
+        return std::filesystem::path(home_->path().toStdString());
+    }
+
+    // Runs the installed shim exactly as the login unit and the sleep hook do, with
+    // ALIENFX_TRAY_BIN standing in for the installed binary.
+    int runInstalledShim(const std::filesystem::path& trayBin,
+                         const std::filesystem::path& pathPrefix = {}) {
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("HOME"), home_->path());
+        env.insert(QStringLiteral("ALIENFX_TRAY_BIN"),
+                   QString::fromStdString(trayBin.string()));
+        if (!pathPrefix.empty()) {
+            env.insert(QStringLiteral("PATH"),
+                       QString::fromStdString(pathPrefix.string()) + QLatin1Char(':') +
+                           env.value(QStringLiteral("PATH")));
+        }
+
+        QProcess shim;
+        shim.setProcessEnvironment(env);
+        shim.start(QString::fromStdString(applyShimPath().string()), {});
+        if (!shim.waitForFinished(15000)) {
+            shim.kill();
+            return -1;
+        }
+        return shim.exitStatus() == QProcess::NormalExit ? shim.exitCode() : -1;
+    }
+
     std::unique_ptr<QTemporaryDir> home_;
     QByteArray previousHome_;
 };

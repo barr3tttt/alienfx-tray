@@ -44,12 +44,13 @@ int applyWithRetry(const Scheme& scheme, std::ostream& out, std::ostream& err) {
         if (result.allOk()) break;
 
         // Only keep trying for conditions that plausibly clear on their own. A controller
-        // that is simply absent, or one that actively refused a command, will still be
-        // absent or still refuse in half a second - retrying it just makes every login wait
-        // out the whole timeout for nothing.
+        // that has not been re-enumerated yet reports Missing, and that is the exact case
+        // this poll exists for: on resume, usbhid has not necessarily finished. A controller
+        // that actively refused a command is not retried - it will refuse again.
         const bool worthRetrying = std::ranges::any_of(kAllDomains, [&](Domain domain) {
             const DeviceState state = result.forDomain(domain).state;
-            return state == DeviceState::Busy || state == DeviceState::Unknown;
+            return state == DeviceState::Busy || state == DeviceState::Missing ||
+                   state == DeviceState::Unknown;
         });
         if (!worthRetrying || std::chrono::steady_clock::now() >= deadline) break;
 

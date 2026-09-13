@@ -102,7 +102,9 @@ WantedBy=graphical-session.target
 # /usr/lib/systemd/system-sleep/alienfx
 #!/bin/sh
 [ "$1" = "post" ] || exit 0
-su - "$SLEEP_USER" -c "$HOME/.local/bin/alienfx-apply" >/dev/null 2>&1 &
+# $HOME must stay single-quoted: the hook runs as root, so a double-quoted one would
+# expand to /root before su ever sees it.
+su - "$SLEEP_USER" -c '$HOME/.local/bin/alienfx-apply' >/dev/null 2>&1 &
 exit 0
 ```
 

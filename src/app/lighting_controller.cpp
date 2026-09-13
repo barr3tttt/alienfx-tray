@@ -71,7 +71,6 @@ void LightingController::applyWorkingScheme(const Scheme& scheme) {
     config_.activeSchemeName = working_.name;
     submitCurrent();
     if (saveTimer_) saveTimer_->start();
-    emit schemeChanged();
 }
 
 void LightingController::activateScheme(const QString& name) {
@@ -128,18 +127,36 @@ void LightingController::onWorkerStatus(Domain domain, DomainStatus status) {
 
 void LightingController::onApplyFinished(quint64, bool) {
     if (watchdog_) watchdog_->stop();
+    if (!watchdogTripped_) return;
+
+    // The apply came back after all, so the stamp below was wrong. Any status the worker
+    // does not consider changed it will never re-send - the slow case is a scheme with many
+    // external zones, where 175 ms each outruns the watchdog and then reports Ready again -
+    // so put back what it last told us rather than leaving a healthy controller labelled dead.
+    watchdogTripped_ = false;
+    for (Domain domain : kAllDomains) {
+        DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
+        if (slot != watchdogStamp()) continue;
+        slot = domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_;
+        emit statusChanged(domain, slot);
+    }
+}
+
+DomainStatus LightingController::watchdogStamp() {
+    return DomainStatus{DeviceState::Error, "controller stopped responding"};
 }
 
 void LightingController::onApplyWatchdog() {
     // The apply never came back. Rather than let the UI imply everything is fine, say what
     // is actually true: the worker is stuck on a device that is not answering.
-    const DomainStatus stuck{DeviceState::Error, "controller stopped responding"};
+    const DomainStatus stuck = watchdogStamp();
     for (Domain domain : kAllDomains) {
         DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
-        if (slot.state == DeviceState::Ready || slot.state == DeviceState::Unknown) {
-            slot = stuck;
-            emit statusChanged(domain, slot);
-        }
+        if (slot.state != DeviceState::Ready && slot.state != DeviceState::Unknown) continue;
+        (domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_) = slot;
+        slot = stuck;
+        watchdogTripped_ = true;
+        emit statusChanged(domain, slot);
     }
 }
 

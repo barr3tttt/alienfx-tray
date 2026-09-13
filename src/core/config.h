@@ -33,6 +33,12 @@ struct Config {
     bool upsertScheme(const Scheme& scheme);
     bool removeScheme(const std::string& name);
 
+    // Adds back any built-in scheme whose name is no longer present, leaving everything
+    // else alone. Editing a scheme in place rewrites it, so without this a drag of the
+    // colour wheel would destroy a shipped preset with no way back short of deleting the
+    // config file. Never overwrites: a user scheme that shares a built-in name wins.
+    void restoreMissingBuiltins();
+
     [[nodiscard]] static Config defaults();
 };
 

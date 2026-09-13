@@ -37,6 +37,7 @@ class TrayIcon : public QObject {
    private slots:
     void onActivated(QSystemTrayIcon::ActivationReason reason);
     void rebuildSchemeActions();
+    void updateSchemeChecks();
     void onStatusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
 
    private:

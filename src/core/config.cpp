@@ -13,6 +13,31 @@ namespace {
 
 using nlohmann::json;
 
+// The parse is deliberately non-throwing, and these readers are what keep it that way.
+// nlohmann's own value() throws on a type mismatch, so a hand-edited "lightsOn": "yes"
+// would escape all the way out of loadConfig - past the one invariant this file has, that a
+// bad config degrades to working lights rather than to no lights.
+bool readBool(const json& object, const char* key, bool fallback) {
+    const auto it = object.find(key);
+    return it != object.end() && it->is_boolean() ? it->get<bool>() : fallback;
+}
+
+int readInt(const json& object, const char* key, int fallback) {
+    const auto it = object.find(key);
+    return it != object.end() && it->is_number_integer() ? it->get<int>() : fallback;
+}
+
+std::string readString(const json& object, const char* key, std::string fallback) {
+    const auto it = object.find(key);
+    if (it == object.end() || !it->is_string()) return fallback;
+    return it->get<std::string>();
+}
+
+json readMember(const json& object, const char* key) {
+    const auto it = object.find(key);
+    return it != object.end() ? *it : json{};
+}
+
 json encodeColor(Rgb color) { return toHex(color); }
 
 Rgb decodeColor(const json& value, Rgb fallback) {
@@ -33,7 +58,7 @@ KeyboardSettings decodeKeyboard(const json& value) {
 
     if (value.contains("effect") && value["effect"].is_string())
         keyboard.effect = parseEffect(value["effect"].get<std::string>());
-    keyboard.color = decodeColor(value.value("color", json{}), keyboard.color);
+    keyboard.color = decodeColor(readMember(value, "color"), keyboard.color);
     if (value.contains("brightness") && value["brightness"].is_number_integer())
         keyboard.brightness = Brightness::fromPercent(value["brightness"].get<int>());
     return keyboard;
@@ -55,8 +80,8 @@ bool decodeZone(const json& value, ExternalZone& out) {
     if (id < 0 || id >= kExternalLightIdCount) return false;
 
     out.lightId = static_cast<std::uint8_t>(id);
-    out.name = value.value("name", defaultZoneName(out.lightId));
-    out.color.ac = decodeColor(value.value("color", json{}), Rgb{});
+    out.name = readString(value, "name", defaultZoneName(out.lightId));
+    out.color.ac = decodeColor(readMember(value, "color"), Rgb{});
     if (value.contains("batteryColor")) {
         out.color.battery = decodeColor(value["batteryColor"], out.color.ac);
         out.color.separateBatteryColor = true;
@@ -103,8 +128,8 @@ bool decodeScheme(const json& value, Scheme& out) {
     if (!value.contains("name") || !value["name"].is_string()) return false;
     out.name = value["name"].get<std::string>();
     if (out.name.empty()) return false;
-    out.keyboard = decodeKeyboard(value.value("keyboard", json{}));
-    out.external = decodeExternal(value.value("external", json{}));
+    out.keyboard = decodeKeyboard(readMember(value, "keyboard"));
+    out.external = decodeExternal(readMember(value, "external"));
     return true;
 }
 
@@ -147,6 +172,11 @@ bool Config::removeScheme(const std::string& name) {
     return false;
 }
 
+void Config::restoreMissingBuiltins() {
+    for (const Scheme& builtin : builtinSchemes())
+        if (!findScheme(builtin.name)) schemes.push_back(builtin);
+}
+
 Config Config::defaults() {
     Config config;
     config.schemes = builtinSchemes();
@@ -183,7 +213,7 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
         return false;
     }
 
-    const int version = root.value("schemaVersion", 0);
+    const int version = readInt(root, "schemaVersion", 0);
     if (version > Config::kSchemaVersion) {
         error = "config was written by a newer version of alienfx-tray";
         return false;
@@ -201,8 +231,8 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
         return false;
     }
 
-    config.activeSchemeName = root.value("activeScheme", config.schemes.front().name);
-    config.lightsOn = root.value("lightsOn", true);
+    config.activeSchemeName = readString(root, "activeScheme", config.schemes.front().name);
+    config.lightsOn = readBool(root, "lightsOn", true);
     out = std::move(config);
     return true;
 }
@@ -230,6 +260,10 @@ LoadResult loadConfig(const std::filesystem::path& path) {
         return result;
     }
     result.config = std::move(parsed);
+    // Built-ins are re-seeded rather than merged: editing a scheme in place is the model, so
+    // the only way back to a shipped preset is to delete the version you edited and have it
+    // reappear. A user scheme that happens to share the name is never touched.
+    result.config.restoreMissingBuiltins();
     return result;
 }
 

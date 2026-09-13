@@ -119,3 +119,9 @@ resume repaint anyway, so persistence would buy nothing and cost the safety net.
   `pgrep -c ... || echo 0` yields `00`. Count lines instead.
 - 2026-09-13: `cp` is aliased to interactive on this machine. A plain `cp` in a script can
   silently do nothing and leave you testing a stale binary. Use `command cp -f`.
+- 2026-09-13: Qt's `moc` silently stops finding `Q_OBJECT` when a raw string literal
+  containing `#` is passed directly as a function argument - `writeAll(path, R"({"c":
+  "#010203"})")`. It reports "No relevant classes found", emits an empty `.moc`, and the
+  only symptom is an undefined-reference-to-vtable link error with no hint at the cause.
+  Binding the literal to a local first (`const std::string text = R"(...)"; writeAll(path,
+  text);`) parses fine. `tests/test_config.cpp` uses that form throughout.

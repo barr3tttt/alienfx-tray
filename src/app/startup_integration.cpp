@@ -79,7 +79,8 @@ std::string IntegrationStatus::summary() const {
         case ShimState::Unreadable:
             break;
     }
-    return "An alienfx-apply script exists but could not be read.";
+    return "An alienfx-apply script exists but could not be read. Enabling this will keep a "
+           "copy of it before replacing it.";
 }
 
 IntegrationStatus checkStartupIntegration() {
@@ -117,7 +118,7 @@ bool installStartupIntegration(std::string& error) {
 
     // Back up anything that is not already ours, and never overwrite an existing backup:
     // the first thing that was there is the thing worth keeping.
-    if (status.shim == ShimState::Foreign && !status.backupExists) {
+    if (status.needsBackup() && !status.backupExists) {
         std::filesystem::copy_file(status.shimPath, status.backupPath,
                                    std::filesystem::copy_options::overwrite_existing, ec);
         if (ec) {

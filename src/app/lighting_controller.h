@@ -62,6 +62,12 @@ class LightingController : public QObject {
     void shutdown();
 
    signals:
+    // A different scheme is now active, or the active one was replaced wholesale. Views
+    // reload everything when this fires.
+    //
+    // Deliberately NOT emitted by applyWorkingScheme: that path's only caller is the editor
+    // itself, and echoing an edit straight back at its author rewrites the widget the user
+    // is still typing into and rebuilds the tray menu once per colour-wheel frame.
     void schemeChanged();
     void schemeListChanged();
     void lightsOnChanged(bool on);
@@ -75,6 +81,7 @@ class LightingController : public QObject {
 
    private:
     void submitCurrent();
+    [[nodiscard]] static DomainStatus watchdogStamp();
 
     Config config_;
     Scheme working_;
@@ -82,6 +89,11 @@ class LightingController : public QObject {
 
     DomainStatus keyboardStatus_;
     DomainStatus externalStatus_;
+    // What the worker last told us, before the watchdog overwrote it. The worker only emits
+    // on change, so an apply that finishes late leaves nothing to correct the stamp with.
+    DomainStatus keyboardBeforeWatchdog_;
+    DomainStatus externalBeforeWatchdog_;
+    bool watchdogTripped_ = false;
 
     QThread* workerThread_ = nullptr;
     DeviceWorker* worker_ = nullptr;

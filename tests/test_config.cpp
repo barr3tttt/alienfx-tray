@@ -78,6 +78,87 @@ class TestConfig : public QObject {
         QVERIFY(!result.config.activeScheme().name.empty());
     }
 
+    // Hand-editing is advertised, so a field of the wrong type is a shape a real user will
+    // produce. It has to land on the fallback like every other unusable value: the invariant
+    // is that a bad config degrades to working lights, never to a process that dies on the
+    // login and resume path.
+    void aFieldOfTheWrongTypeFallsBackInsteadOfThrowing() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string text = R"({
+          "schemaVersion": "1",
+          "activeScheme": 3,
+          "lightsOn": "yes",
+          "schemes": [{"name": "x",
+                       "keyboard": {"color": "#010203", "brightness": "loud"},
+                       "external": {"zones": [{"id": 1, "name": 5, "color": "#040506"}]}}]
+        })";
+        writeAll(path, text);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+        QVERIFY(result.config.lightsOn);
+        QCOMPARE(result.config.activeSchemeName, std::string("x"));
+
+        const Scheme* scheme = result.config.findScheme("x");
+        QVERIFY(scheme != nullptr);
+        QCOMPARE(scheme->keyboard.color, (Rgb{1, 2, 3}));
+        QCOMPARE(scheme->external.zones.size(), std::size_t(1));
+        QCOMPARE(scheme->external.zones.front().name, defaultZoneName(1));
+        QCOMPARE(scheme->external.zones.front().color.ac, (Rgb{4, 5, 6}));
+    }
+
+    // Editing a scheme rewrites it in place, so the only route back to a shipped preset is
+    // to delete the edited copy and have it reappear.
+    void deletedBuiltInsComeBackOnTheNextLoad() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        Config config;
+        Scheme mine = defaultScheme();
+        mine.name = "Mine";
+        config.schemes.push_back(mine);
+        config.activeSchemeName = "Mine";
+
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+        QCOMPARE(result.config.activeSchemeName, std::string("Mine"));
+        for (const Scheme& builtin : builtinSchemes())
+            QVERIFY2(result.config.findScheme(builtin.name) != nullptr, builtin.name.c_str());
+    }
+
+    void aUserSchemeSharingABuiltInNameIsNeverOverwritten() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        const std::string shared = builtinSchemes().back().name;
+        Config config;
+        Scheme mine = defaultScheme();
+        mine.name = shared;
+        mine.keyboard.color = Rgb{7, 7, 7};
+        config.schemes.push_back(mine);
+        config.activeSchemeName = shared;
+
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        int matches = 0;
+        for (const Scheme& scheme : result.config.schemes)
+            if (scheme.name == shared) ++matches;
+        QCOMPARE(matches, 1);
+        QCOMPARE(result.config.findScheme(shared)->keyboard.color, (Rgb{7, 7, 7}));
+    }
+
     void aMissingFileIsNotAnError() {
         QTemporaryDir dir;
         const std::filesystem::path path =

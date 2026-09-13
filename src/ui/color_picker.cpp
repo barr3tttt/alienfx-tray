@@ -18,6 +18,11 @@ constexpr int kHandleRadius = 6;
 
 qreal clamp01(qreal value) { return qBound(qreal(0), value, qreal(1)); }
 
+// What the hex field's current text denotes, accepting the leading # the user need not type.
+QColor parseHexField(const QString& text) {
+    return QColor(text.startsWith('#') ? text : '#' + text);
+}
+
 }  // namespace
 
 // ------------------------------------------------------------------------------ wheel ---
@@ -68,7 +73,10 @@ void ColorWheel::rebuildWheel() {
             // Feather the last pixel of the rim so the circle does not look jagged.
             const qreal edge = clamp01((1.0 - distance) * radius);
             pixel.setAlphaF(edge);
-            line[x] = pixel.rgba();
+            // The image is premultiplied; QColor::rgba() is not. Storing it raw would leave
+            // the feathered rim with colour channels above its alpha, which reads as a halo
+            // rather than a fade.
+            line[x] = qPremultiply(pixel.rgba());
         }
     }
 }
@@ -240,8 +248,7 @@ ColorPicker::ColorPicker(QWidget* parent) : QWidget(parent) {
         applyColor(next, false);
     });
     connect(hex_, &QLineEdit::textEdited, this, [this](const QString& text) {
-        QString normalised = text.startsWith('#') ? text : '#' + text;
-        QColor parsed(normalised);
+        const QColor parsed = parseHexField(text);
         if (parsed.isValid()) applyColor(parsed, true);
     });
 
@@ -262,8 +269,17 @@ void ColorPicker::setColor(const QColor& color) {
     wheel_->setColor(color_);
     shade_->setHueSaturation(color_);
     shade_->setValue(color_.valueF());
-    hex_->setText(color_.name(QColor::HexRgb));
+    showHex();
     updating_ = false;
+}
+
+void ColorPicker::showHex() {
+    // Leave a half-typed entry that already means this colour alone. "#bd9" is a valid short
+    // form, so expanding it to "#bbdd99" mid-keystroke fills the field to its maximum length
+    // and the remaining characters of "#bd93f9" have nowhere to go.
+    const QColor shown = parseHexField(hex_->text());
+    if (shown.isValid() && shown == color_) return;
+    hex_->setText(color_.name(QColor::HexRgb));
 }
 
 void ColorPicker::applyColor(const QColor& color, bool fromHexField) {
@@ -274,7 +290,7 @@ void ColorPicker::applyColor(const QColor& color, bool fromHexField) {
     wheel_->setColor(color_);
     shade_->setHueSaturation(color_);
     shade_->setValue(color_.valueF());
-    if (!fromHexField) hex_->setText(color_.name(QColor::HexRgb));
+    if (!fromHexField) showHex();
     updating_ = false;
 
     emit colorChanged(color_);

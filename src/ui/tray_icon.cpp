@@ -51,8 +51,11 @@ TrayIcon::TrayIcon(LightingController& controller, QObject* parent)
     connect(icon_, &QSystemTrayIcon::activated, this, &TrayIcon::onActivated);
     connect(&controller_, &LightingController::schemeListChanged, this,
             &TrayIcon::rebuildSchemeActions);
+    // Activating a scheme only moves the tick. Rebuilding here would delete the very action
+    // whose triggered() is still on the stack - and under Plasma that stack belongs to the
+    // StatusNotifierItem DBus adaptor, which goes on to use the action after the slot returns.
     connect(&controller_, &LightingController::schemeChanged, this,
-            &TrayIcon::rebuildSchemeActions);
+            &TrayIcon::updateSchemeChecks);
     connect(&controller_, &LightingController::lightsOnChanged, this, [this](bool on) {
         QSignalBlocker blocker(lightsAction_);
         lightsAction_->setChecked(on);
@@ -75,18 +78,27 @@ void TrayIcon::show() { icon_->show(); }
 void TrayIcon::rebuildSchemeActions() {
     for (QAction* action : schemeMenu_->actions()) {
         schemeGroup_->removeAction(action);
-        delete action;
+        schemeMenu_->removeAction(action);
+        action->deleteLater();
     }
 
     for (const Scheme& scheme : controller_.config().schemes) {
         const QString name = QString::fromStdString(scheme.name);
         QAction* action = schemeMenu_->addAction(name);
         action->setCheckable(true);
-        action->setChecked(scheme.name == controller_.config().activeSchemeName);
+        // The scheme name, not the label: a menu label carries accelerator markup.
+        action->setData(name);
         schemeGroup_->addAction(action);
         connect(action, &QAction::triggered, this,
                 [this, name] { controller_.activateScheme(name); });
     }
+    updateSchemeChecks();
+}
+
+void TrayIcon::updateSchemeChecks() {
+    const QString active = QString::fromStdString(controller_.config().activeSchemeName);
+    for (QAction* action : schemeMenu_->actions())
+        action->setChecked(action->data().toString() == active);
     updateTooltip();
 }
 

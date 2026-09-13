@@ -75,9 +75,9 @@ int main(int argc, char* argv[]) {
             }
             return alienfx::runProbeExternalMode(id, std::cout, std::cerr);
         }
-        std::cerr << "alienfx-tray: unknown option " << argument << "\n\n";
-        printUsage(std::cerr);
-        return 2;
+        // Anything else belongs to QApplication. Qt's own standard options are real - an
+        // X11 session manager restores this process with `-session <id>` - and a tray that
+        // refuses to start on session restore is one nobody can rely on.
     }
 
     QApplication app(argc, argv);
