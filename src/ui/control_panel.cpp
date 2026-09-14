@@ -50,6 +50,7 @@ QString statusStyle(DeviceState state) {
         case DeviceState::Ready:
             return QStringLiteral("color: palette(text);");
         case DeviceState::Busy:
+        case DeviceState::Waiting:
         case DeviceState::Unknown:
             return QStringLiteral("color: palette(mid);");
         case DeviceState::Missing:

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/config.h"
+#include "core/lighting_engine.h"
 #include "core/scheme.h"
 
 namespace alienfx {
@@ -47,6 +48,20 @@ int runOffMode(std::ostream& out, std::ostream& err,
 int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                          std::ostream& err,
                          std::chrono::milliseconds lockTimeout = kLockWaitTimeout);
+
+// Drives each domain to a settled state, retrying only the ones that might still come good.
+//
+// Split out of the headless modes so the rule that matters most here is assertable without
+// hardware: a domain is handed back the moment it is finished with, not at the end of the
+// poll. The keyboard controller IS the interface the user types on, and this poll exists to
+// wait for a controller that has not re-enumerated yet - which on the resume path means
+// waiting at the unlock screen. Holding the keyboard claimed through that wait would leave
+// the machine unable to type for the whole of it.
+[[nodiscard]] ApplyResult applyDomainsWithRetry(LightingEngine& engine,
+                                                const ResolvedScheme& scheme,
+                                                std::chrono::milliseconds pollTimeout,
+                                                std::chrono::milliseconds retryInterval,
+                                                std::ostream& err);
 
 // Exactly what a probe run paints, with no device, no config file and no output involved.
 //

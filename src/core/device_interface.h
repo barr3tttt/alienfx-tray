@@ -14,7 +14,12 @@ enum class DeviceState : std::uint8_t {
     Unknown,  // not looked for yet
     Ready,    // present and last operation succeeded
     Missing,  // not plugged in / not enumerable
-    Busy,     // present but another process holds the interface
+    Busy,     // present but the interface could not be claimed, or refused to become ready
+
+    // Not attempted yet, because another alienfx-tray process holds the device lock. Distinct
+    // from Busy because only this one is coming back on its own: the worker has the frame and
+    // a timer, and will paint it the moment the lock frees. Busy has nobody re-trying it.
+    Waiting,
     Error,    // present, opened, but refused a command
 
     // Took a command and never answered. Distinct from Error on purpose: a refusal came

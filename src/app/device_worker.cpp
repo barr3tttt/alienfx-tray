@@ -101,10 +101,10 @@ void DeviceWorker::processPending() {
 }
 
 void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation) {
-    const DomainStatus busy{DeviceState::Busy,
-                            "another alienfx-tray process is applying a scheme"};
-    publishStatus(Domain::Keyboard, busy);
-    publishStatus(Domain::External, busy);
+    const DomainStatus waiting{DeviceState::Waiting,
+                               "another alienfx-tray process is applying a scheme"};
+    publishStatus(Domain::Keyboard, waiting);
+    publishStatus(Domain::External, waiting);
 
     {
         QMutexLocker locker(&mutex_);

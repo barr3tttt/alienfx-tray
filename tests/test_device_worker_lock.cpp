@@ -181,7 +181,7 @@ void TestDeviceWorkerLock::anOutstandingFrameIsNotReportedAsAFinishedApply() {
     // The UI still has to say what is going on while we wait.
     QVERIFY(statuses.count() >= 2);
     QCOMPARE(asInt(statuses.first().at(1).value<DomainStatus>().state),
-             asInt(DeviceState::Busy));
+             asInt(DeviceState::Waiting));
 
     contender.release();
 

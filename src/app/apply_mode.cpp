@@ -80,6 +80,27 @@ constexpr struct {
     {4, Rgb{255, 0, 255}, "magenta"},  {5, Rgb{0, 255, 255}, "cyan"},
 };
 
+// A domain is worth another attempt only while its failure is one that plausibly clears on
+// its own. A switch rather than a comparison chain so a new state has to be classified here
+// rather than silently falling into "give up".
+bool mightStillComeGood(DeviceState state) {
+    switch (state) {
+        case DeviceState::Unknown:
+        case DeviceState::Busy:
+        case DeviceState::Missing:
+            return true;
+        case DeviceState::Ready:
+        case DeviceState::Error:
+            return false;
+        case DeviceState::Waiting:
+        case DeviceState::Unresponsive:
+            // Neither is reachable here: both are produced by the tray, and this poll runs
+            // only in the headless modes, which hold the device lock for their whole run.
+            return false;
+    }
+    std::unreachable();
+}
+
 Rgb probeColor(std::uint8_t id, std::optional<int> singleLightId) {
     if (singleLightId)
         return id == static_cast<std::uint8_t>(*singleLightId) ? Rgb{255, 255, 255} : Rgb{};
@@ -103,26 +124,8 @@ RunOutcome applyWithRetry(const ResolvedScheme& scheme, const LockStandDown& sta
     DeviceSet devices = makeSdkDevices(context);
     LightingEngine engine(std::move(devices.keyboard), std::move(devices.external));
 
-    const auto deadline = std::chrono::steady_clock::now() + kDeviceWaitTimeout;
-    ApplyResult result;
-    for (int attempt = 1;; ++attempt) {
-        result = engine.apply(scheme);
-        if (result.allOk()) break;
-
-        // Only keep trying for conditions that plausibly clear on their own. A controller
-        // that has not been re-enumerated yet reports Missing, and that is the exact case
-        // this poll exists for: on resume, usbhid has not necessarily finished. A controller
-        // that actively refused a command is not retried - it will refuse again.
-        const bool worthRetrying = std::ranges::any_of(kAllDomains, [&](Domain domain) {
-            const DeviceState state = result.forDomain(domain).state;
-            return state == DeviceState::Busy || state == DeviceState::Missing ||
-                   state == DeviceState::Unknown;
-        });
-        if (!worthRetrying || std::chrono::steady_clock::now() >= deadline) break;
-
-        err << "alienfx-tray: attempt " << attempt << " incomplete, retrying\n";
-        std::this_thread::sleep_for(kDeviceRetryInterval);
-    }
+    ApplyResult result =
+        applyDomainsWithRetry(engine, scheme, kDeviceWaitTimeout, kDeviceRetryInterval, err);
 
     // Hand the interfaces back before we report anything. For the keyboard controller this
     // is the user's actual typing device.
@@ -216,6 +219,42 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                "will\nlight up. Turn them back on and run this again.\n\n";
 
     return outcome.exitCode;
+}
+
+ApplyResult applyDomainsWithRetry(LightingEngine& engine, const ResolvedScheme& scheme,
+                                  std::chrono::milliseconds pollTimeout,
+                                  std::chrono::milliseconds retryInterval, std::ostream& err) {
+    const auto deadline = std::chrono::steady_clock::now() + pollTimeout;
+
+    ApplyResult result;
+    for (int attempt = 1;; ++attempt) {
+        for (Domain domain : kAllDomains) {
+            DomainStatus& status =
+                domain == Domain::Keyboard ? result.keyboard : result.external;
+            if (!mightStillComeGood(status.state)) continue;
+
+            status = engine.applyDomain(domain, scheme);
+
+            // The moment a domain is finished with - applied, or failed in a way waiting will
+            // not mend - its interface goes back. Anything else leaves the keyboard claimed
+            // while we wait on the other controller, and a claimed keyboard is one the user
+            // cannot type on.
+            if (!mightStillComeGood(status.state)) engine.releaseDevice(domain);
+        }
+
+        // Only keep waiting for conditions that plausibly clear on their own. A controller
+        // that has not been re-enumerated yet reports Missing, and that is the exact case
+        // this poll exists for: on resume, usbhid has not necessarily finished. A controller
+        // that actively refused a command is not retried - it will refuse again.
+        const bool anyPending = std::ranges::any_of(kAllDomains, [&](Domain domain) {
+            return mightStillComeGood(result.forDomain(domain).state);
+        });
+        if (!anyPending || std::chrono::steady_clock::now() >= deadline) break;
+
+        err << "alienfx-tray: attempt " << attempt << " incomplete, retrying\n";
+        std::this_thread::sleep_for(retryInterval);
+    }
+    return result;
 }
 
 ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleLightId) {

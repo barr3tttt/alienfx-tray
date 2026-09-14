@@ -42,6 +42,11 @@ class LightingEngine {
 
     ApplyResult apply(const ResolvedScheme& resolved);
 
+    // Apply one domain on its own. The headless retry poll needs this: when it is waiting for
+    // a controller that has not re-enumerated yet, the one that already succeeded must not be
+    // re-sent, and above all must not stay claimed, for the rest of the wait.
+    DomainStatus applyDomain(Domain domain, const ResolvedScheme& resolved);
+
     // Release both USB claims. Called on shutdown and from the destructor.
     void releaseDevices();
 

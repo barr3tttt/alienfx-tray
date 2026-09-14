@@ -166,6 +166,7 @@ bool LightingController::escalatesOnWedge(DeviceState state) {
         case DeviceState::Ready:
         case DeviceState::Unknown:
         case DeviceState::Busy:
+        case DeviceState::Waiting:
             return true;
         case DeviceState::Missing:
         case DeviceState::Error:

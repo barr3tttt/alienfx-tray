@@ -14,6 +14,8 @@ std::string_view toString(DeviceState state) {
             return "missing";
         case DeviceState::Busy:
             return "busy";
+        case DeviceState::Waiting:
+            return "waiting";
         case DeviceState::Error:
             return "error";
         case DeviceState::Unresponsive:
@@ -35,9 +37,13 @@ std::string describe(Domain domain, const DomainStatus& status) {
             text = std::string(name) + " not found.";
             break;
         case DeviceState::Busy:
+            text = std::string(name) + " is busy" +
+                   (status.detail.empty() ? "." : ": " + status.detail);
+            break;
+        case DeviceState::Waiting:
             text = std::string(name) +
-                   " is busy - another process is holding it. Retrying automatically until "
-                   "it lets go.";
+                   " is waiting for another alienfx-tray process to finish with the "
+                   "controllers. Retrying automatically until it lets go.";
             break;
         case DeviceState::Error:
             text = std::string(name) + " refused the last command" +

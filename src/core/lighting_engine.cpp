@@ -34,6 +34,11 @@ ApplyResult LightingEngine::apply(const ResolvedScheme& resolved) {
     return result;
 }
 
+DomainStatus LightingEngine::applyDomain(Domain domain, const ResolvedScheme& resolved) {
+    if (domain == Domain::Keyboard) return applyKeyboard(resolved.scheme().keyboard);
+    return applyExternal(resolved.scheme().external);
+}
+
 DomainStatus LightingEngine::applyKeyboard(const KeyboardSettings& settings) {
     if (!keyboard_) return DomainStatus{DeviceState::Missing, "no keyboard backend"};
 

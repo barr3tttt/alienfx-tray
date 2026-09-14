@@ -32,6 +32,10 @@ alienfx_add_test(test_probe_mode alienfx_app)
 alienfx_add_test(test_watchdog_escalation alienfx_app)
 set_tests_properties(test_watchdog_escalation PROPERTIES TIMEOUT 120)
 
+# The headless retry poll: a domain that has settled is handed back at once rather than held
+# claimed while the poll waits for the other controller.
+alienfx_add_test(test_retry_poll alienfx_app)
+
 # The exit codes the login unit and the resume hook read, and the rule that a mode which
 # painted nothing never prints guidance as though it had. Holds the device lock throughout,
 # so it stands down before opening anything and is safe to run on the real laptop.

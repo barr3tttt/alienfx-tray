@@ -35,11 +35,23 @@ report_state() {
   done
 }
 
+# A run that stood down for the device lock never opens an interface at all, and --apply
+# reports that as success on purpose. Every assertion below would then pass having tested
+# nothing, so refuse to start rather than green-light a vacuous run.
+LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/alienfx-tray.lock"
+if ! flock -n "$LOCK_FILE" true 2>/dev/null; then
+  skip "another alienfx-tray process holds $LOCK_FILE - this run would stand down without \
+claiming an interface, which proves nothing about the driver handback"
+  summary "kernel-driver-reattach"
+  exit $?
+fi
+
 report_state "before:"
 
 note "running: $BIN --apply"
-"$BIN" --apply >/dev/null 2>&1
+apply_output="$("$BIN" --apply 2>&1)"
 apply_status=$?
+[[ -n "$apply_output" ]] && note "$apply_output"
 
 report_state "after: "
 
@@ -74,8 +86,12 @@ else
 fi
 
 # 3. The apply itself has to have worked. A run that reattaches cleanly but never lit
-#    anything would pass the checks above while being useless.
-if [[ "$apply_status" -eq 0 ]]; then
+#    anything would pass the checks above while being useless - and a lock stand-down is
+#    exactly that, reported as success, so the pre-flight check is backed up here in case
+#    the lock was taken between that check and the run.
+if [[ "$apply_output" == *"standing down"* ]]; then
+  fail "--apply stood down for the device lock, so no interface was ever claimed"
+elif [[ "$apply_status" -eq 0 ]]; then
   pass "--apply reported success"
 else
   fail "--apply exited with status $apply_status"

@@ -68,10 +68,10 @@ class LightingController : public QObject {
     void flushPendingSave();
 
     // Whether a domain last published in this state should be escalated when an apply misses
-    // the watchdog deadline. Busy is included deliberately: "another process is holding it,
-    // will retry on the next change" promises a recovery a wedged worker never delivers, so
-    // leaving that text up hides the exact hang the watchdog exists to surface. Missing and
-    // Error already name a specific fault and keep it.
+    // the watchdog deadline. Busy and Waiting are included deliberately: both read as a
+    // situation that is about to resolve, and a wedged worker never delivers that, so leaving
+    // either up hides the exact hang the watchdog exists to surface. Missing and Error
+    // already name a specific fault and keep it.
     [[nodiscard]] static bool escalatesOnWedge(DeviceState state);
 
     // The one bounded wait in the process. Quitting cannot hang on a wedged controller:
