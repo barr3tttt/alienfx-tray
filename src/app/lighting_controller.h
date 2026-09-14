@@ -3,16 +3,17 @@
 #include <QObject>
 #include <QString>
 
+#include <memory>
+
 #include "app/metatypes.h"
 #include "core/config.h"
 #include "core/scheme.h"
 
-class QThread;
 class QTimer;
 
 namespace alienfx {
 
-class DeviceWorker;
+class DeviceThread;
 
 // The GUI thread's single view of the world: what scheme is active, what the devices think
 // of us, and the one place edits turn into device work.
@@ -35,9 +36,6 @@ class LightingController : public QObject {
     // UI is told so. The SDK's APIv4 ready-wait has no timeout of its own.
     static constexpr int kApplyWatchdogMs = 6000;
 
-    // Longest the application will wait for the device thread when quitting.
-    static constexpr int kShutdownWaitMs = 3000;
-
     [[nodiscard]] const Config& config() const { return config_; }
     [[nodiscard]] const Scheme& workingScheme() const { return working_; }
     [[nodiscard]] bool lightsOn() const { return config_.lightsOn; }
@@ -57,8 +55,8 @@ class LightingController : public QObject {
     // Re-sends the current state. Used after a device comes back.
     void reapply();
 
-    // Blocks only on the worker thread joining, with a bounded wait, so quitting cannot
-    // hang on a wedged controller.
+    // The one bounded wait in the process. Quitting cannot hang on a wedged controller:
+    // DeviceThread gives up and walks away rather than joining. See DeviceThread::stop.
     void shutdown();
 
    signals:
@@ -98,8 +96,7 @@ class LightingController : public QObject {
     // must not disarm the watchdog the apply after it is relying on.
     quint64 pendingGeneration_ = 0;
 
-    QThread* workerThread_ = nullptr;
-    DeviceWorker* worker_ = nullptr;
+    std::unique_ptr<DeviceThread> deviceThread_;
     QTimer* saveTimer_ = nullptr;
     QTimer* watchdog_ = nullptr;
     bool shutdownDone_ = false;

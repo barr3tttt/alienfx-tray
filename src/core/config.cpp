@@ -114,8 +114,11 @@ ExternalSettings decodeExternal(const json& value) {
 
     // An absent "zones" key means "you decide" and gets the built-in zone list. An explicit
     // empty array means the user wants no external lighting, and is honoured as written.
-    if (!value.contains("zones") || !value["zones"].is_array())
-        return defaultExternalSettings(Rgb{189, 147, 249});
+    // Either way only the zones are defaulted - a brightness the file did carry stands.
+    if (!value.contains("zones") || !value["zones"].is_array()) {
+        external.zones = defaultExternalSettings(Rgb{189, 147, 249}).zones;
+        return external;
+    }
 
     for (const json& entry : value["zones"]) {
         ExternalZone zone;

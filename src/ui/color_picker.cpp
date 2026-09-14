@@ -264,7 +264,13 @@ ColorPicker::ColorPicker(QWidget* parent) : QWidget(parent) {
             [this] { emit colorCommitted(color_); });
     connect(shade_, &ShadeBar::interactionFinished, this,
             [this] { emit colorCommitted(color_); });
-    connect(hex_, &QLineEdit::editingFinished, this, [this] { emit colorCommitted(color_); });
+    connect(hex_, &QLineEdit::editingFinished, this, [this] {
+        // An entry the validator accepted but QColor could not parse - "bd93f" - never
+        // reached applyColor, so the field would otherwise keep showing a colour that was
+        // never applied while this commits the old one behind it.
+        showHex();
+        emit colorCommitted(color_);
+    });
 
     setColor(color_);
 }

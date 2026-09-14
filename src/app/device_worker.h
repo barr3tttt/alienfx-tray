@@ -11,6 +11,7 @@
 #include "app/process_lock.h"
 #include "core/lighting_engine.h"
 #include "core/scheme.h"
+#include "device/device_factory.h"
 
 class QTimer;
 
@@ -70,6 +71,11 @@ class DeviceWorker : public QObject {
    signals:
     void statusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
     void applyFinished(quint64 generation, bool allOk);
+
+   protected:
+    // Built on the worker thread rather than by the constructor, because opening USB handles
+    // must not happen on the GUI thread. Overridden in tests to stand in for hardware.
+    virtual DeviceSet createDevices();
 
    private slots:
     void processPending();

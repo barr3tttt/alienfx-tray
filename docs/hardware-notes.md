@@ -168,14 +168,24 @@ while (!IsDeviceReady()) usleep(20);
 ```
 
 No iteration cap, no timeout. It is reachable from `SetPowerAction`, which is the hot path
-for every external colour change, so a wedged controller would spin a thread forever.
+for every external colour change, so a wedged controller spins a thread forever.
 
-The external device therefore checks `IsDeviceReady()` against a deadline of its own before
-entering that path, and reports the controller as busy instead of calling in. Separately,
-nothing that must finish - the GUI thread, application exit - is allowed to block on the
-device thread: shutdown asks politely, waits a bounded time, and leaves without it if
-necessary. The kernel reattaches `usbhid` when the usbfs descriptor closes on process exit,
-so even that path recovers.
+The external device checks `IsDeviceReady()` against a deadline of its own before calling
+in, and reports the controller as busy rather than entering the path. That is a filter, not
+a guarantee, and it is worth being precise about why: the unbounded spin is not at the
+entry. `SetPowerAction`'s `API_V4` branch runs the full `0x5b..0x60` write loop, then
+`PrepareAndSend(COMMV4_control)`, then `WaitForBusy()`, and only then `WaitForReady()`. A
+controller that answers ready at the pre-check and latches `ALIENFX_V4_BUSY` during the
+write therefore still wedges the calling thread, once per zone. The pre-check makes that
+rarer. Nothing bounds it.
+
+So the containment is structural instead. The device thread is the only thread that can be
+wedged, and nothing that must finish is allowed to wait on it without a bound: `DeviceThread`
+owns it, hands out no handle to it, and its only stop path is a bounded one that walks away
+and says so if the thread does not come back. `LightingController`'s apply watchdog reports
+the affected domain as unresponsive through the ordinary per-domain status path, so a wedge
+reaches the UI rather than leaving the lights silently frozen. The kernel reattaches
+`usbhid` when the usbfs descriptor closes on process exit, so even the walk-away recovers.
 
 ## Nothing persists unless asked
 

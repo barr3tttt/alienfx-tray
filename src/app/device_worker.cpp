@@ -21,11 +21,14 @@ DeviceWorker::~DeviceWorker() {
     if (engine_) engine_->releaseDevices();
 }
 
-void DeviceWorker::initialise() {
+DeviceSet DeviceWorker::createDevices() {
     silenceSdkLogging();
-
     context_ = std::make_unique<UsbContext>();
-    DeviceSet devices = makeSdkDevices(*context_);
+    return makeSdkDevices(*context_);
+}
+
+void DeviceWorker::initialise() {
+    DeviceSet devices = createDevices();
     engine_ = std::make_unique<LightingEngine>(std::move(devices.keyboard),
                                                std::move(devices.external));
 

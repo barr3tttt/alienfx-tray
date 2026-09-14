@@ -87,9 +87,19 @@ class SdkExternalDevice final : public SdkDeviceBase, public IExternalDevice {
 
    private:
     // AlienFX_SDK::Functions::SetPowerAction reaches WaitForReady(), whose APIv4 branch is
-    // `while (!IsDeviceReady()) usleep(20);` - an unbounded spin with no timeout. A wedged
-    // controller would hang the calling thread forever. We refuse to enter that path unless
-    // the device has already told us it is ready, within a deadline we control.
+    // `while (!IsDeviceReady()) usleep(20);` - an unbounded spin with no timeout.
+    //
+    // This pre-check cannot bound that. The spin is not at the entry to the path: the SDK
+    // runs its whole 0x5b..0x60 write loop, then PrepareAndSend(COMMV4_control), then
+    // WaitForBusy(), and only then reaches the spin. A controller that answers ready here
+    // and latches busy mid-call still wedges the calling thread indefinitely. All the
+    // pre-check buys is that an already-unresponsive controller is reported busy instead of
+    // being called into, which makes entering the path rarer, not impossible.
+    //
+    // The residual risk is contained outside this class: the device thread is the only
+    // thread that may be wedged, nothing is allowed to wait on it without a bound (see
+    // DeviceThread), and LightingController's watchdog reports the domain as unresponsive
+    // so a wedge is visible rather than silent.
     [[nodiscard]] bool waitUntilReady();
 
     static constexpr std::chrono::milliseconds kReadyTimeout{250};

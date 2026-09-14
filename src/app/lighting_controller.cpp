@@ -1,8 +1,8 @@
 #include "app/lighting_controller.h"
 
-#include <QThread>
 #include <QTimer>
 
+#include "app/device_thread.h"
 #include "app/device_worker.h"
 
 namespace alienfx {
@@ -35,19 +35,11 @@ LightingController::LightingController(QObject* parent) : QObject(parent) {
     watchdog_->setInterval(kApplyWatchdogMs);
     connect(watchdog_, &QTimer::timeout, this, &LightingController::onApplyWatchdog);
 
-    // Deliberately unparented: if the worker cannot be stopped on the way out we leak the
-    // thread object rather than let ~QThread abort the process over a still-running thread.
-    workerThread_ = new QThread;
-    workerThread_->setObjectName("alienfx-device");
-    worker_ = new DeviceWorker;
-    worker_->moveToThread(workerThread_);
-
-    connect(workerThread_, &QThread::started, worker_, &DeviceWorker::initialise);
-    connect(workerThread_, &QThread::finished, worker_, &QObject::deleteLater);
-    connect(worker_, &DeviceWorker::statusChanged, this, &LightingController::onWorkerStatus);
-    connect(worker_, &DeviceWorker::applyFinished, this, &LightingController::onApplyFinished);
-
-    workerThread_->start();
+    deviceThread_ = std::make_unique<DeviceThread>(new DeviceWorker);
+    connect(deviceThread_.get(), &DeviceThread::statusChanged, this,
+            &LightingController::onWorkerStatus);
+    connect(deviceThread_.get(), &DeviceThread::applyFinished, this,
+            &LightingController::onApplyFinished);
 
     // Paint what the config says as soon as we are up.
     submitCurrent();
@@ -60,8 +52,9 @@ DomainStatus LightingController::status(Domain domain) const {
 }
 
 void LightingController::submitCurrent() {
-    if (!worker_) return;
-    pendingGeneration_ = worker_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
+    if (!deviceThread_) return;
+    pendingGeneration_ =
+        deviceThread_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
     if (watchdog_) watchdog_->start();
 }
 
@@ -175,26 +168,11 @@ void LightingController::shutdown() {
 
     if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
 
-    // Queued, never blocking. If the worker is stuck inside a device call, a blocking
-    // invoke here would hang the quit - which is the exact failure this app must not have.
-    if (worker_) {
-        QMetaObject::invokeMethod(worker_, &DeviceWorker::shutdown, Qt::QueuedConnection);
-        worker_ = nullptr;  // owned by the thread's finished->deleteLater from here on
-    }
-
-    if (!workerThread_) return;
-
-    workerThread_->quit();
-    // Bounded wait. The SDK's APIv4 ready-wait can spin without a timeout of its own, and
-    // quitting must not depend on a wedged controller changing its mind. If the wait
-    // expires we exit anyway: the kernel reattaches usbhid when the usbfs descriptor
-    // closes, so the keyboard comes back either way.
-    if (workerThread_->wait(kShutdownWaitMs)) {
-        delete workerThread_;
-    } else {
-        qWarning("alienfx-tray: device worker did not stop in time; exiting without joining");
-    }
-    workerThread_ = nullptr;
+    // The SDK's APIv4 ready-wait can spin without a timeout of its own, and quitting must
+    // not depend on a wedged controller changing its mind. DeviceThread::stop bounds the
+    // wait and abandons the thread if it expires; the kernel reattaches usbhid when the
+    // usbfs descriptor closes on exit, so the keyboard comes back either way.
+    if (deviceThread_) deviceThread_->stop(DeviceThread::kStopTimeout);
 }
 
 }  // namespace alienfx

@@ -119,9 +119,14 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
         return 2;
     }
 
-    Scheme scheme;
+    LoadResult loaded = loadConfig(configPath());
+    if (!loaded.error.empty())
+        err << "alienfx-tray: " << loaded.error << " - using defaults\n";
+
+    // The keyboard keeps whatever the active scheme gives it. This mode is run to identify
+    // the external lights, so it must not repaint the lighting around the ones being read.
+    Scheme scheme = loaded.config.activeScheme();
     scheme.name = "external probe";
-    scheme.keyboard = KeyboardSettings{};  // leave the keyboard on its usual colour
 
     scheme.external.zones.clear();
     for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id) {

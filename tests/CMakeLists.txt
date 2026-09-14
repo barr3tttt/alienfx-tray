@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Network Test)
 
 qt_standard_project_setup()
 
@@ -24,3 +24,9 @@ alienfx_add_test(test_cli_options alienfx_app)
 # The kernel-driver reattach reporting. tests/e2e/kernel-driver-reattach.sh drives the real
 # binary and asserts the happy-path sysfs end state, so it cannot reach the error branch.
 alienfx_add_test(test_usb_reattach alienfx_core)
+
+# The guard on the device thread's containment: it wedges a worker inside a device call and
+# stops it. A join anywhere on that path makes this test hang rather than fail, so it gets a
+# timeout well under ctest's default.
+alienfx_add_test(test_device_thread alienfx_app)
+set_tests_properties(test_device_thread PROPERTIES TIMEOUT 60)

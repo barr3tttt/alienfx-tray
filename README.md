@@ -118,11 +118,28 @@ WantedBy=graphical-session.target
 # /usr/lib/systemd/system-sleep/alienfx
 #!/bin/sh
 [ "$1" = "post" ] || exit 0
-# $HOME must stay single-quoted: the hook runs as root, so a double-quoted one would
-# expand to /root before su ever sees it.
-su - "$SLEEP_USER" -c '$HOME/.local/bin/alienfx-apply' >/dev/null 2>&1 &
+
+# systemd gives a system-sleep hook nothing but argv - there is no variable naming the user
+# who suspended the machine - so the graphical session has to be found at runtime.
+for session in $(loginctl list-sessions --no-legend | awk '{ print $1 }'); do
+    case "$(loginctl show-session "$session" -p Type --value)" in
+        wayland|x11) ;;
+        *) continue ;;
+    esac
+    user=$(loginctl show-session "$session" -p Name --value)
+
+    # $HOME must stay single-quoted: the hook runs as root, so a double-quoted one would
+    # expand to /root before su ever sees it. Failures go to the journal rather than
+    # /dev/null - a hook that fails silently looks installed while the lights stay wrong.
+    su - "$user" -c '$HOME/.local/bin/alienfx-apply' ||
+        echo "alienfx: restoring lighting for $user failed with status $?" >&2
+done
 exit 0
 ```
+
+The hook runs while systemd holds the resume, so it is deliberately synchronous: a colour
+change costs a few hundred milliseconds, and backgrounding it would throw away the exit
+status this reports.
 
 ## Configuration
 

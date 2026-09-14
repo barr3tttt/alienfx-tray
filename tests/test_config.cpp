@@ -110,6 +110,31 @@ class TestConfig : public QObject {
         QCOMPARE(scheme->external.zones.front().color.ac, (Rgb{4, 5, 6}));
     }
 
+    // The file the app writes always carries both keys. This is the hand-edit path the
+    // README advertises as safe: an "external" block that sets a brightness and leaves the
+    // zone list to us must still come back at the brightness it asked for.
+    void externalBrightnessSurvivesAnAbsentZonesKey() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string text = R"({
+          "schemaVersion": 1,
+          "activeScheme": "x",
+          "schemes": [{"name": "x", "external": {"brightness": 30}}]
+        })";
+        writeAll(path, text);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+
+        const Scheme* scheme = result.config.findScheme("x");
+        QVERIFY(scheme != nullptr);
+        QCOMPARE(scheme->external.brightness.percent(), 30);
+        QCOMPARE(scheme->external.zones.size(),
+                 defaultExternalSettings(Rgb{0, 0, 0}).zones.size());
+    }
+
     // Editing a scheme rewrites it in place, so the only route back to a shipped preset is
     // to delete the edited copy and have it reappear.
     void deletedBuiltInsComeBackOnTheNextLoad() {
