@@ -147,6 +147,11 @@ Backgrounding matters here. `alienfx-apply` is not quick on the resume path: it 
 which is the ordinary case immediately after a wake, not a rare one. Run synchronously, that
 is up to about 35 seconds of frozen screen after opening the lid, every single time.
 
+If that lock wait does expire, `--apply` stands down rather than writing to a controller
+somebody else is holding, and exits 0: whoever holds the lock is already painting the
+lighting, so the login unit has no reason to be marked failed. A genuine failure - neither
+controller reachable - still exits 1.
+
 ## Configuration
 
 `~/.config/alienfx-tray/config.json`, written atomically and safe to hand-edit. An

@@ -3,14 +3,12 @@
 #include <QThread>
 
 #include <atomic>
-#include <chrono>
 #include <memory>
 #include <string>
 
 #include "app/device_worker.h"
 #include "app/lighting_controller.h"
 #include "app/metatypes.h"
-#include "app/process_lock.h"
 #include "core/device_interface.h"
 
 // QCOMPARE on a scoped enum would pick up alienfx::toString() by ADL, which returns a
@@ -26,6 +24,7 @@ namespace {
 struct Script {
     // Below zero means open() succeeds; otherwise it fails with this DeviceState.
     std::atomic<int> keyboardOpenFails{-1};
+    std::atomic<int> externalOpenFails{-1};
     std::atomic<bool> keyboardRefusesBrightness{false};
     std::atomic<bool> keyboardLeavesInterfaceDetached{false};
 
@@ -85,6 +84,11 @@ class ScriptedExternal final : public IExternalDevice {
     explicit ScriptedExternal(std::shared_ptr<Script> script) : script_(std::move(script)) {}
 
     bool open() override {
+        const int fails = script_->externalOpenFails.load();
+        if (fails >= 0) {
+            status_ = DomainStatus{static_cast<DeviceState>(fails), "fake: external unavailable"};
+            return false;
+        }
         open_ = true;
         status_ = DomainStatus{DeviceState::Ready, {}};
         return true;
@@ -232,22 +236,21 @@ void TestWatchdogEscalation::editAZoneColour() {
     controller_->applyWorkingScheme(scheme);
 }
 
-// The case the escalation exists for. Two processes racing for the device lock leave both
-// domains reporting Busy; if the next apply then wedges, nothing else will ever publish a
-// status, so a Busy left standing keeps promising a retry that is never coming.
+// The case the escalation exists for. Both controllers last reported Busy - another claimant
+// holds them - and the next apply then wedges, so nothing will ever publish a status again.
+// A Busy left standing keeps promising a retry that is never coming.
 void TestWatchdogEscalation::bothDomainsBusyThenAWedgeStillReachesTheUser() {
-    // Exactly what the login unit or the resume hook does to a running tray: hold the device
-    // lock, so the worker cannot take it and publishes Busy to both domains.
-    ProcessLock contender;
-    QVERIFY(contender.acquire(std::chrono::milliseconds(500)));
+    script_->keyboardOpenFails.store(asInt(DeviceState::Busy));
+    script_->externalOpenFails.store(asInt(DeviceState::Busy));
 
     controller_ = makeController();
     QTRY_COMPARE_WITH_TIMEOUT(stateOf(Domain::Keyboard), asInt(DeviceState::Busy), 5000);
-    QCOMPARE(stateOf(Domain::External), asInt(DeviceState::Busy));
-    contender.release();
+    QTRY_COMPARE(stateOf(Domain::External), asInt(DeviceState::Busy));
 
     QSignalSpy changes(controller_.get(), &LightingController::statusChanged);
 
+    script_->keyboardOpenFails.store(-1);
+    script_->externalOpenFails.store(-1);
     script_->wedgeExternal.store(true);
     editAZoneColour();
 

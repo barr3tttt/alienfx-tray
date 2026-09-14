@@ -12,7 +12,14 @@ namespace alienfx {
 // Headless entry points. None of these create a QApplication or touch a display: the resume
 // hook runs as a bare shell with no session bus, no DISPLAY and no WAYLAND_DISPLAY.
 //
-// All of them return a process exit code.
+// The exit codes are a contract: the login unit and the resume hook both read them.
+//
+//   0  the lighting was applied - or another alienfx-tray process already holds the device
+//      lock, which means it is applying the lighting itself. That case is deliberately a
+//      success: the lights end up painted, and a login unit must not be marked failed for
+//      losing a race it did not need to win.
+//   1  neither controller could be driven.
+//   2  the arguments were wrong.
 
 // Applies the active scheme from the config file. This is what login and resume run.
 int runApplyMode(std::ostream& out, std::ostream& err);

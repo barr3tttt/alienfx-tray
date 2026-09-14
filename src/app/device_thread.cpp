@@ -21,6 +21,7 @@ DeviceThread::DeviceThread(DeviceWorker* worker, QObject* parent)
     connect(thread_, &QThread::finished, worker_, &QObject::deleteLater);
     connect(worker_, &DeviceWorker::statusChanged, this, &DeviceThread::statusChanged);
     connect(worker_, &DeviceWorker::applyFinished, this, &DeviceThread::applyFinished);
+    connect(worker_, &DeviceWorker::applyDeferred, this, &DeviceThread::applyDeferred);
 
     thread_->start();
 }

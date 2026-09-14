@@ -47,6 +47,8 @@ LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs
             &LightingController::onWorkerStatus);
     connect(deviceThread_.get(), &DeviceThread::applyFinished, this,
             &LightingController::onApplyFinished);
+    connect(deviceThread_.get(), &DeviceThread::applyDeferred, this,
+            &LightingController::onApplyDeferred);
 
     // Paint what the config says as soon as we are up.
     submitCurrent();
@@ -146,6 +148,13 @@ void LightingController::onApplyFinished(quint64 generation, bool) {
         slot = domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_;
         emit statusChanged(domain, slot);
     }
+}
+
+void LightingController::onApplyDeferred(quint64) {
+    // Proof of life. The worker is waiting on another process rather than stuck in a device
+    // call, so the deadline starts again: without this the watchdog would eventually call a
+    // perfectly responsive controller unresponsive for being patient.
+    if (watchdog_) watchdog_->start();
 }
 
 DomainStatus LightingController::watchdogStamp() {

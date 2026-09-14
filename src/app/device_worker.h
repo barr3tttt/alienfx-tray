@@ -54,9 +54,17 @@ class DeviceWorker : public QObject {
     static constexpr int kKeyboardIdleReleaseMs = 1500;
     static constexpr int kExternalIdleReleaseMs = 20000;
 
-    // How long to wait for a one-shot `--apply` to finish its batch before giving up on
-    // this frame. Short: a dropped preview frame is invisible, a stalled UI is not.
+    // How long to wait for the device lock before giving up on this attempt. Short, because
+    // a frame that waits is a frame the preview is behind on - but giving up on the attempt
+    // is not giving up on the frame, which is re-tried below.
     static constexpr int kLockTimeoutMs = 750;
+
+    // A contended lock means another process is mid-apply: the resume hook holds it across
+    // its whole device poll, which can be tens of seconds. A colour-wheel drag submits a
+    // frame roughly every 16 ms, so retrying at that rate would be a hot loop against the
+    // lock for the entire window. Back off instead, and keep only the newest frame.
+    static constexpr int kInitialRetryDelayMs = 250;
+    static constexpr int kMaxRetryDelayMs = 2000;
 
     // Callable from any thread. Replaces whatever was pending and returns the generation
     // the caller can expect back from applyFinished, so a superseded apply is recognisable.
@@ -72,6 +80,11 @@ class DeviceWorker : public QObject {
     void statusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
     void applyFinished(quint64 generation, bool allOk);
 
+    // The frame could not be painted yet because another process holds the devices, and is
+    // still owed. Deliberately not applyFinished: nothing has been applied, and the apply
+    // watchdog must not read a lock we are patiently waiting on as a wedged device thread.
+    void applyDeferred(quint64 generation);
+
    protected:
     // Built on the worker thread rather than by the constructor, because opening USB handles
     // must not happen on the GUI thread. Overridden in tests to stand in for hardware.
@@ -84,6 +97,7 @@ class DeviceWorker : public QObject {
 
    private:
     void publishStatus(Domain domain, const DomainStatus& status);
+    void deferUntilLockFrees(ResolvedScheme scheme, quint64 generation);
     void releaseIdle(Domain domain);
     // The lock is only meaningful while a handle is open, so it goes back with the last one.
     void releaseLockIfIdle();
@@ -93,6 +107,8 @@ class DeviceWorker : public QObject {
     std::unique_ptr<LightingEngine> engine_;
     QTimer* keyboardIdleTimer_ = nullptr;
     QTimer* externalIdleTimer_ = nullptr;
+    QTimer* retryTimer_ = nullptr;
+    int retryDelayMs_ = kInitialRetryDelayMs;
 
     QMutex mutex_;
     std::optional<ResolvedScheme> pending_;

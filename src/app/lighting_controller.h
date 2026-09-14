@@ -97,6 +97,7 @@ class LightingController : public QObject {
    private slots:
     void onWorkerStatus(alienfx::Domain domain, alienfx::DomainStatus status);
     void onApplyFinished(quint64 generation, bool allOk);
+    void onApplyDeferred(quint64 generation);
     void saveConfigNow();
     void onApplyWatchdog();
 

@@ -32,6 +32,11 @@ alienfx_add_test(test_probe_mode alienfx_app)
 alienfx_add_test(test_watchdog_escalation alienfx_app)
 set_tests_properties(test_watchdog_escalation PROPERTIES TIMEOUT 120)
 
+# The frame a contended device lock used to swallow. It holds the lock from the test, so it
+# spends a couple of real retry delays waiting for it to free.
+alienfx_add_test(test_device_worker_lock alienfx_app)
+set_tests_properties(test_device_worker_lock PROPERTIES TIMEOUT 120)
+
 # The kernel-driver reattach reporting. tests/e2e/kernel-driver-reattach.sh drives the real
 # binary and asserts the happy-path sysfs end state, so it cannot reach the error branch.
 alienfx_add_test(test_usb_reattach alienfx_core)

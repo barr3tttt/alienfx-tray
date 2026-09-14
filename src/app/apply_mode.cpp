@@ -26,6 +26,10 @@ constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
 // does not sit around forever if something is genuinely stuck.
 constexpr auto kLockTimeout = std::chrono::seconds(25);
 
+// See app/apply_mode.h - these are read by the login unit and the resume hook.
+constexpr int kExitApplied = 0;
+constexpr int kExitNothingApplied = 1;
+
 // Six unmistakable, well-separated colours for the IDs known to drive visible lights, and
 // black everywhere else so anything that does light up stands out.
 constexpr struct {
@@ -51,8 +55,16 @@ int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream
 
     UsbContext context;
     ProcessLock lock;
-    if (!lock.acquire(kLockTimeout))
-        err << "alienfx-tray: timed out waiting for another instance to finish\n";
+    if (!lock.acquire(kLockTimeout)) {
+        // Never write without it. Two processes on these controllers is precisely what
+        // leaves the keyboard interface claimed with no kernel driver behind it, and the
+        // lock holder is by definition already painting lighting - so standing down costs
+        // the user nothing, while barging in could cost a working keyboard until reboot.
+        err << "alienfx-tray: another alienfx-tray process is holding the controllers and "
+               "is applying the lighting; standing down rather than writing without the "
+               "device lock\n";
+        return kExitApplied;
+    }
 
     DeviceSet devices = makeSdkDevices(context);
     LightingEngine engine(std::move(devices.keyboard), std::move(devices.external));
@@ -100,7 +112,7 @@ int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream
 
     // Partial success is still success: one dead controller must not stop the other from
     // lighting up, and a login unit that fails on a missing device is noise.
-    return result.anyOk() ? 0 : 1;
+    return result.anyOk() ? kExitApplied : kExitNothingApplied;
 }
 
 }  // namespace

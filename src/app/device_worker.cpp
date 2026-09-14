@@ -4,6 +4,7 @@
 #include <QMutexLocker>
 #include <QTimer>
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 
@@ -42,6 +43,10 @@ void DeviceWorker::initialise() {
     externalIdleTimer_->setInterval(kExternalIdleReleaseMs);
     connect(externalIdleTimer_, &QTimer::timeout, this, &DeviceWorker::releaseIdleExternal);
 
+    retryTimer_ = new QTimer(this);
+    retryTimer_->setSingleShot(true);
+    connect(retryTimer_, &QTimer::timeout, this, &DeviceWorker::processPending);
+
     // Something may already have been submitted while the thread was starting.
     QMetaObject::invokeMethod(this, &DeviceWorker::processPending, Qt::QueuedConnection);
 }
@@ -79,13 +84,10 @@ void DeviceWorker::processPending() {
     // Serialise against the `--apply` the resume hook and the login unit both run.
     if (!deviceLock_.held() &&
         !deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
-        const DomainStatus busy{DeviceState::Busy,
-                                "another alienfx-tray process is applying a scheme"};
-        publishStatus(Domain::Keyboard, busy);
-        publishStatus(Domain::External, busy);
-        emit applyFinished(generation, false);
+        deferUntilLockFrees(std::move(*scheme), generation);
         return;
     }
+    retryDelayMs_ = kInitialRetryDelayMs;
 
     const ApplyResult result = engine_->apply(*scheme);
 
@@ -96,6 +98,27 @@ void DeviceWorker::processPending() {
     if (externalIdleTimer_) externalIdleTimer_->start();
 
     emit applyFinished(generation, result.allOk());
+}
+
+void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation) {
+    const DomainStatus busy{DeviceState::Busy,
+                            "another alienfx-tray process is applying a scheme"};
+    publishStatus(Domain::Keyboard, busy);
+    publishStatus(Domain::External, busy);
+
+    {
+        QMutexLocker locker(&mutex_);
+        if (shuttingDown_) return;
+        // A frame submitted while we were waiting on the lock is newer than this one, and a
+        // live preview only ever owes the newest frame. Putting this one back over it would
+        // paint a colour the user has already dragged past.
+        if (!pending_) pending_ = std::move(scheme);
+    }
+
+    if (retryTimer_) retryTimer_->start(retryDelayMs_);
+    retryDelayMs_ = std::min(retryDelayMs_ * 2, kMaxRetryDelayMs);
+
+    emit applyDeferred(generation);
 }
 
 void DeviceWorker::publishStatus(Domain domain, const DomainStatus& status) {
@@ -138,6 +161,7 @@ void DeviceWorker::shutdown() {
     }
     if (keyboardIdleTimer_) keyboardIdleTimer_->stop();
     if (externalIdleTimer_) externalIdleTimer_->stop();
+    if (retryTimer_) retryTimer_->stop();
     if (engine_) engine_->releaseDevices();
     deviceLock_.release();
 }
