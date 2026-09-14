@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <ostream>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -21,14 +22,51 @@ namespace {
 constexpr auto kDeviceWaitTimeout = std::chrono::seconds(10);
 constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
 
-// Long enough to outlast a running tray's external-controller idle window, which is itself
-// long because re-opening that controller costs about 1.6 s. Short enough that a resume hook
-// does not sit around forever if something is genuinely stuck.
-constexpr auto kLockTimeout = std::chrono::seconds(25);
-
 // See app/apply_mode.h - these are read by the login unit and the resume hook.
 constexpr int kExitApplied = 0;
 constexpr int kExitNothingApplied = 1;
+constexpr int kExitBadArguments = 2;
+
+// What a mode wants to happen when another alienfx-tray process holds the device lock.
+//
+// Required at every call site and deliberately without a default, because the honest answer
+// differs per mode and a mode that inherited apply's answer by accident is exactly how this
+// path went wrong: --off was told it had succeeded while the lights were still on.
+//
+// Note the asymmetry and do not collapse it back together. REFUSING to write because
+// somebody else holds the lock is always the safe outcome, and for --apply it is also a
+// success - the holder is already painting the active scheme, which is what was asked for.
+// PROCEEDING without the lock is the opposite: two writers on a controller where a bad write
+// costs the owner a working keyboard until reboot, and it must never happen quietly. Same
+// lock, opposite answers.
+struct LockStandDown {
+    int exitCode;
+    // Goes to stdout when standing down is a success and to stderr when it is not, so a mode
+    // that did nothing cannot read like one that did its job.
+    std::string_view explanation;
+};
+
+constexpr LockStandDown kApplyStandDown{
+    kExitApplied,
+    "alienfx-tray: another alienfx-tray process holds the controllers and is applying the "
+    "lighting; standing down rather than writing without the device lock\n"};
+
+constexpr LockStandDown kOffStandDown{
+    kExitNothingApplied,
+    "alienfx-tray: another alienfx-tray process holds the controllers; standing down rather "
+    "than writing without the device lock, so the lights were NOT turned off\n"};
+
+constexpr LockStandDown kProbeStandDown{
+    kExitNothingApplied,
+    "alienfx-tray: another alienfx-tray process holds the controllers; standing down rather "
+    "than writing without the device lock, so nothing was painted and no zone was probed\n"};
+
+struct RunOutcome {
+    int exitCode = kExitNothingApplied;
+    // False when the lock was held elsewhere and no device was touched at all.
+    bool applied = false;
+    ApplyResult result{};
+};
 
 // Six unmistakable, well-separated colours for the IDs known to drive visible lights, and
 // black everywhere else so anything that does light up stands out.
@@ -50,20 +88,16 @@ Rgb probeColor(std::uint8_t id, std::optional<int> singleLightId) {
     return Rgb{};
 }
 
-int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream& err) {
+RunOutcome applyWithRetry(const ResolvedScheme& scheme, const LockStandDown& standDown,
+                          std::chrono::milliseconds lockTimeout, std::ostream& out,
+                          std::ostream& err) {
     silenceSdkLogging();
 
     UsbContext context;
     ProcessLock lock;
-    if (!lock.acquire(kLockTimeout)) {
-        // Never write without it. Two processes on these controllers is precisely what
-        // leaves the keyboard interface claimed with no kernel driver behind it, and the
-        // lock holder is by definition already painting lighting - so standing down costs
-        // the user nothing, while barging in could cost a working keyboard until reboot.
-        err << "alienfx-tray: another alienfx-tray process is holding the controllers and "
-               "is applying the lighting; standing down rather than writing without the "
-               "device lock\n";
-        return kExitApplied;
+    if (!lock.acquire(lockTimeout)) {
+        (standDown.exitCode == kExitApplied ? out : err) << standDown.explanation;
+        return RunOutcome{standDown.exitCode, false, {}};
     }
 
     DeviceSet devices = makeSdkDevices(context);
@@ -112,44 +146,60 @@ int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream
 
     // Partial success is still success: one dead controller must not stop the other from
     // lighting up, and a login unit that fails on a missing device is noise.
-    return result.anyOk() ? kExitApplied : kExitNothingApplied;
+    return RunOutcome{result.anyOk() ? kExitApplied : kExitNothingApplied, true, result};
 }
 
 }  // namespace
 
-int runApplyMode(std::ostream& out, std::ostream& err) {
+int runApplyMode(std::ostream& out, std::ostream& err,
+                 std::chrono::milliseconds lockTimeout) {
     LoadResult loaded = loadConfig(configPath());
     if (!loaded.error.empty())
         err << "alienfx-tray: " << loaded.error << " - using defaults\n";
-    return applyWithRetry(resolveOutput(loaded.config.lightingState()), out, err);
+    return applyWithRetry(resolveOutput(loaded.config.lightingState()), kApplyStandDown,
+                          lockTimeout, out, err)
+        .exitCode;
 }
 
-int runOffMode(std::ostream& out, std::ostream& err) {
+int runOffMode(std::ostream& out, std::ostream& err, std::chrono::milliseconds lockTimeout) {
     LoadResult loaded = loadConfig(configPath());
     LightingState state = loaded.config.lightingState();
     state.lightsOn = false;
-    return applyWithRetry(resolveOutput(state), out, err);
+    return applyWithRetry(resolveOutput(state), kOffStandDown, lockTimeout, out, err).exitCode;
 }
 
 int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
-                         std::ostream& err) {
+                         std::ostream& err, std::chrono::milliseconds lockTimeout) {
     if (singleLightId && (*singleLightId < 0 || *singleLightId >= kExternalLightIdCount)) {
         err << "alienfx-tray: external light ID must be between 0 and "
             << (kExternalLightIdCount - 1) << "\n";
-        return 2;
+        return kExitBadArguments;
     }
 
     LoadResult loaded = loadConfig(configPath());
     if (!loaded.error.empty())
         err << "alienfx-tray: " << loaded.error << " - using defaults\n";
 
+    // Paint first, then say what to look at. The guidance below is the whole output of this
+    // mode, and printing it over lighting this run did not set is worse than printing
+    // nothing: the user reads a zone mapping off whatever happened to be lit already and
+    // writes it down as measured fact.
+    const RunOutcome outcome = applyWithRetry(buildProbeOutput(loaded.config, singleLightId),
+                                              kProbeStandDown, lockTimeout, out, err);
+    if (!outcome.applied) return outcome.exitCode;
+    if (!outcome.result.external.ok()) {
+        err << "alienfx-tray: the external controller was not painted, so there is nothing "
+               "to look at\n";
+        return kExitNothingApplied;
+    }
+
     if (singleLightId) {
-        out << "Lighting external light ID " << *singleLightId
-            << " white. Every other external light is off.\n\n"
+        out << "\nExternal light ID " << *singleLightId
+            << " is lit white. Every other external light is off.\n\n"
                "Look at the laptop and note exactly which fixture is lit - and whether it is\n"
                "the whole of that fixture or only part of it.\n\n";
     } else {
-        out << "Lighting each external ID a distinct colour. Look at the laptop and note "
+        out << "\nEach external ID is lit a distinct colour. Look at the laptop and note "
                "which\nphysical zone shows which colour:\n\n";
         for (const auto& entry : kProbeColors)
             out << "  ID " << static_cast<int>(entry.id) << "  " << entry.name << "\n";
@@ -162,10 +212,10 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
            "the next scheme you apply.\n\n";
 
     if (!loaded.config.lightsOn)
-        out << "The lights are currently switched off, so nothing will light up. Turn them "
-               "back\non and run this again.\n\n";
+        out << "The lights are switched off, so every zone was painted black and nothing "
+               "will\nlight up. Turn them back on and run this again.\n\n";
 
-    return applyWithRetry(buildProbeOutput(loaded.config, singleLightId), out, err);
+    return outcome.exitCode;
 }
 
 ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleLightId) {

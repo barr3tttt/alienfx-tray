@@ -32,6 +32,11 @@ alienfx_add_test(test_probe_mode alienfx_app)
 alienfx_add_test(test_watchdog_escalation alienfx_app)
 set_tests_properties(test_watchdog_escalation PROPERTIES TIMEOUT 120)
 
+# The exit codes the login unit and the resume hook read, and the rule that a mode which
+# painted nothing never prints guidance as though it had. Holds the device lock throughout,
+# so it stands down before opening anything and is safe to run on the real laptop.
+alienfx_add_test(test_apply_modes alienfx_app)
+
 # The frame a contended device lock used to swallow. It holds the lock from the test, so it
 # spends a couple of real retry delays waiting for it to free.
 alienfx_add_test(test_device_worker_lock alienfx_app)

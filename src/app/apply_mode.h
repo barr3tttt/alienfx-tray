@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <iosfwd>
 #include <optional>
 #include <string>
@@ -14,18 +15,26 @@ namespace alienfx {
 //
 // The exit codes are a contract: the login unit and the resume hook both read them.
 //
-//   0  the lighting was applied - or another alienfx-tray process already holds the device
-//      lock, which means it is applying the lighting itself. That case is deliberately a
-//      success: the lights end up painted, and a login unit must not be marked failed for
-//      losing a race it did not need to win.
-//   1  neither controller could be driven.
+//   0  the lighting was applied. For --apply only, this also covers standing down because
+//      another alienfx-tray process holds the device lock: that process is already painting
+//      the active scheme, which is exactly what --apply asked for, so the login unit must
+//      not be marked failed for losing a race it did not need to win.
+//   1  nothing was applied. That includes both controllers being undrivable and --off or
+//      --probe-external standing down for the lock: neither of those has anyone else doing
+//      its job for it, so a lock it could not take means the command did not happen.
 //   2  the arguments were wrong.
 
+// How long a headless run waits for the device lock before standing down. A parameter rather
+// than a constant only so a test can reach the stand-down without a 25 second wait.
+inline constexpr std::chrono::seconds kLockWaitTimeout{25};
+
 // Applies the active scheme from the config file. This is what login and resume run.
-int runApplyMode(std::ostream& out, std::ostream& err);
+int runApplyMode(std::ostream& out, std::ostream& err,
+                 std::chrono::milliseconds lockTimeout = kLockWaitTimeout);
 
 // Paints everything black without touching the saved state. For scripts and panic buttons.
-int runOffMode(std::ostream& out, std::ostream& err);
+int runOffMode(std::ostream& out, std::ostream& err,
+               std::chrono::milliseconds lockTimeout = kLockWaitTimeout);
 
 // Identification probe for the external controller.
 //
@@ -36,7 +45,8 @@ int runOffMode(std::ostream& out, std::ostream& err);
 // it produces an answer that cannot be misread - which is how a provisional zone becomes a
 // confirmed one.
 int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
-                         std::ostream& err);
+                         std::ostream& err,
+                         std::chrono::milliseconds lockTimeout = kLockWaitTimeout);
 
 // Exactly what a probe run paints, with no device, no config file and no output involved.
 //

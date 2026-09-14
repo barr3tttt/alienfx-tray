@@ -147,10 +147,13 @@ Backgrounding matters here. `alienfx-apply` is not quick on the resume path: it 
 which is the ordinary case immediately after a wake, not a rare one. Run synchronously, that
 is up to about 35 seconds of frozen screen after opening the lid, every single time.
 
-If that lock wait does expire, `--apply` stands down rather than writing to a controller
-somebody else is holding, and exits 0: whoever holds the lock is already painting the
-lighting, so the login unit has no reason to be marked failed. A genuine failure - neither
-controller reachable - still exits 1.
+If that lock wait does expire, every mode stands down rather than writing to a controller
+somebody else is holding. What that means depends on the mode, because only `--apply` has
+somebody else doing its job for it: whoever holds the lock is already painting the active
+scheme, so `--apply` exits 0 and the login unit has no reason to be marked failed. `--off`
+and `--probe-external` exit 1 and say what did not happen - the lights were not turned off,
+or nothing was painted - because for them a lock they could not take means the command did
+not run. Neither controller reachable also exits 1.
 
 ## Configuration
 

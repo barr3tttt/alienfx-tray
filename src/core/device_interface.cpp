@@ -36,7 +36,8 @@ std::string describe(Domain domain, const DomainStatus& status) {
             break;
         case DeviceState::Busy:
             text = std::string(name) +
-                   " is busy - another process is holding it. Will retry on the next change.";
+                   " is busy - another process is holding it. Retrying automatically until "
+                   "it lets go.";
             break;
         case DeviceState::Error:
             text = std::string(name) + " refused the last command" +
