@@ -26,8 +26,11 @@ alienfx_add_test(test_cli_options alienfx_app)
 # user then writes down as fact.
 alienfx_add_test(test_probe_mode alienfx_app)
 
-# That a wedged device thread reaches the UI rather than hiding behind a stale Busy.
+# That a wedged device thread reaches the UI rather than hiding behind a stale Busy. It
+# drives a real LightingController against a device layer that genuinely hangs, so it needs
+# room for a couple of real watchdog periods but must never be allowed to hang for good.
 alienfx_add_test(test_watchdog_escalation alienfx_app)
+set_tests_properties(test_watchdog_escalation PROPERTIES TIMEOUT 120)
 
 # The kernel-driver reattach reporting. tests/e2e/kernel-driver-reattach.sh drives the real
 # binary and asserts the happy-path sysfs end state, so it cannot reach the error branch.

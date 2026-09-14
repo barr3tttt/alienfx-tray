@@ -14,6 +14,7 @@ class QTimer;
 namespace alienfx {
 
 class DeviceThread;
+class DeviceWorker;
 
 // The GUI thread's single view of the world: what scheme is active, what the devices think
 // of us, and the one place edits turn into device work.
@@ -26,6 +27,12 @@ class LightingController : public QObject {
 
    public:
     explicit LightingController(QObject* parent = nullptr);
+
+    // Takes ownership of `worker` and uses `applyWatchdogMs` as the apply deadline. The seam
+    // exists so the wedge this class is built to survive can actually be staged: a device
+    // layer whose apply never returns, without hardware and without a six-second wait.
+    LightingController(DeviceWorker* worker, int applyWatchdogMs, QObject* parent = nullptr);
+
     ~LightingController() override;
 
     // Config edits are written back after this much quiet. Applies are immediate; only the

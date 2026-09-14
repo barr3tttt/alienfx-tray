@@ -9,7 +9,12 @@
 
 namespace alienfx {
 
-LightingController::LightingController(QObject* parent) : QObject(parent) {
+LightingController::LightingController(QObject* parent)
+    : LightingController(new DeviceWorker, kApplyWatchdogMs, parent) {}
+
+LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs,
+                                       QObject* parent)
+    : QObject(parent) {
     LoadResult loaded = loadConfig(configPath());
     config_ = std::move(loaded.config);
     if (!loaded.error.empty()) {
@@ -34,10 +39,10 @@ LightingController::LightingController(QObject* parent) : QObject(parent) {
 
     watchdog_ = new QTimer(this);
     watchdog_->setSingleShot(true);
-    watchdog_->setInterval(kApplyWatchdogMs);
+    watchdog_->setInterval(applyWatchdogMs);
     connect(watchdog_, &QTimer::timeout, this, &LightingController::onApplyWatchdog);
 
-    deviceThread_ = std::make_unique<DeviceThread>(new DeviceWorker);
+    deviceThread_ = std::make_unique<DeviceThread>(worker);
     connect(deviceThread_.get(), &DeviceThread::statusChanged, this,
             &LightingController::onWorkerStatus);
     connect(deviceThread_.get(), &DeviceThread::applyFinished, this,
@@ -137,14 +142,14 @@ void LightingController::onApplyFinished(quint64 generation, bool) {
     watchdogTripped_ = false;
     for (Domain domain : kAllDomains) {
         DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
-        if (slot != watchdogStamp()) continue;
+        if (slot.state != DeviceState::Unresponsive) continue;
         slot = domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_;
         emit statusChanged(domain, slot);
     }
 }
 
 DomainStatus LightingController::watchdogStamp() {
-    return DomainStatus{DeviceState::Error, "controller stopped responding"};
+    return DomainStatus{DeviceState::Unresponsive, {}};
 }
 
 bool LightingController::escalatesOnWedge(DeviceState state) {
@@ -156,8 +161,12 @@ bool LightingController::escalatesOnWedge(DeviceState state) {
         case DeviceState::Missing:
         case DeviceState::Error:
             return false;
+        case DeviceState::Unresponsive:
+            // Already said. Escalating it again would overwrite the pre-watchdog status
+            // with the stamp itself, and the restore would then put the stamp back.
+            return false;
     }
-    return true;
+    std::unreachable();
 }
 
 void LightingController::onApplyWatchdog() {
@@ -165,10 +174,16 @@ void LightingController::onApplyWatchdog() {
     // is actually true: the worker is stuck on a device that is not answering. Which of the
     // two it is stuck on is unknowable from here, so every domain still promising progress
     // is escalated rather than guessing one.
-    const DomainStatus stuck = watchdogStamp();
     for (Domain domain : kAllDomains) {
         DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
         if (!escalatesOnWedge(slot.state)) continue;
+
+        // The stamp says nothing about the kernel driver, and a driverless interface costs
+        // the user a working keyboard until reboot. It outlives whatever the lighting is
+        // doing, so it crosses over rather than being reset by a fresh DomainStatus.
+        DomainStatus stuck = watchdogStamp();
+        stuck.interfaceLeftDetached = slot.interfaceLeftDetached;
+
         (domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_) = slot;
         slot = stuck;
         watchdogTripped_ = true;

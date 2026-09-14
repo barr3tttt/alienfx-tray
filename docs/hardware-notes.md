@@ -183,9 +183,14 @@ So the containment is structural instead. The device thread is the only thread t
 wedged, and nothing that must finish is allowed to wait on it without a bound: `DeviceThread`
 owns it, hands out no handle to it, and its only stop path is a bounded one that walks away
 and says so if the thread does not come back. `LightingController`'s apply watchdog reports
-the affected domain as unresponsive through the ordinary per-domain status path, so a wedge
-reaches the UI rather than leaving the lights silently frozen. The kernel reattaches
-`usbhid` when the usbfs descriptor closes on process exit, so even the walk-away recovers.
+every affected domain as `DeviceState::Unresponsive` through the ordinary per-domain status
+path, so a wedge reaches the UI rather than leaving the lights silently frozen. That state
+exists separately from `Error` because a refusal came back and a hang did not, and telling
+someone a controller "refused the last command" when it is hanging sends them looking for a
+udev rule instead of a stuck device. A domain last reported busy is escalated too: "another
+process is holding it, will retry on the next change" promises a recovery a wedged worker
+never delivers. The kernel reattaches `usbhid` when the usbfs descriptor closes on process
+exit, so even the walk-away recovers.
 
 ## Nothing persists unless asked
 

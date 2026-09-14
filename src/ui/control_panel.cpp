@@ -54,6 +54,7 @@ QString statusStyle(DeviceState state) {
             return QStringLiteral("color: palette(mid);");
         case DeviceState::Missing:
         case DeviceState::Error:
+        case DeviceState::Unresponsive:
             break;
     }
     return QStringLiteral("font-weight: bold;");

@@ -1,3 +1,10 @@
+# A switch over DeviceState or KeyboardEffect that forgets an enumerator decides what the
+# user is told has gone wrong, so it must not compile. Scoped to our own sources: the
+# vendored SDK is a separate subdirectory and is not held to this.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  add_compile_options(-Werror=switch)
+endif()
+
 # --------------------------------------------------------------------------------------
 # alienfx_core - no Qt, no USB, no SDK. Pure lighting model, fully testable on any machine.
 # --------------------------------------------------------------------------------------

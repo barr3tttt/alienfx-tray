@@ -1,5 +1,7 @@
 #include "core/device_interface.h"
 
+#include <utility>
+
 namespace alienfx {
 
 std::string_view toString(DeviceState state) {
@@ -14,8 +16,10 @@ std::string_view toString(DeviceState state) {
             return "busy";
         case DeviceState::Error:
             return "error";
+        case DeviceState::Unresponsive:
+            return "unresponsive";
     }
-    return "unknown";
+    std::unreachable();
 }
 
 std::string describe(Domain domain, const DomainStatus& status) {
@@ -37,6 +41,12 @@ std::string describe(Domain domain, const DomainStatus& status) {
         case DeviceState::Error:
             text = std::string(name) + " refused the last command" +
                    (status.detail.empty() ? "." : ": " + status.detail);
+            break;
+        case DeviceState::Unresponsive:
+            text = std::string(name) +
+                   " has stopped responding - a command went out and never came back. This "
+                   "is the controller hanging, not a permissions problem. Lighting will "
+                   "catch up if it answers.";
             break;
         case DeviceState::Unknown:
             break;

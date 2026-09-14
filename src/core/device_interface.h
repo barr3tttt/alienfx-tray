@@ -16,7 +16,17 @@ enum class DeviceState : std::uint8_t {
     Missing,  // not plugged in / not enumerable
     Busy,     // present but another process holds the interface
     Error,    // present, opened, but refused a command
+
+    // Took a command and never answered. Distinct from Error on purpose: a refusal came
+    // back and a hang did not, and the two send someone looking in opposite directions.
+    // Only the apply watchdog produces this - no device reports it about itself, because a
+    // device that could would not be wedged.
+    Unresponsive,
 };
+
+// Every switch over DeviceState in this project is exhaustive with no default arm, so adding
+// an enumerator above is a compile error at each site rather than a silent fallthrough. Keep
+// it that way: the states drive what the user is told has gone wrong.
 
 [[nodiscard]] std::string_view toString(DeviceState state);
 
