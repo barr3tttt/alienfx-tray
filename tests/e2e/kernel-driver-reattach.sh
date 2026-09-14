@@ -38,12 +38,29 @@ report_state() {
 # A run that stood down for the device lock never opens an interface at all, and --apply
 # reports that as success on purpose. Every assertion below would then pass having tested
 # nothing, so refuse to start rather than green-light a vacuous run.
+#
+# Only a genuine conflict may skip. flock also exits non-zero when it is absent or cannot
+# open the lock path, and reporting either of those as "another process holds it" would be a
+# false reason to not run the one guard this failure has. -E gives the conflict its own exit
+# code so the two cannot be confused; anything else falls through to the run, where the
+# stand-down check below is still watching.
 LOCK_FILE="${XDG_RUNTIME_DIR:-/tmp}/alienfx-tray.lock"
-if ! flock -n "$LOCK_FILE" true 2>/dev/null; then
+LOCK_HELD_EXIT=99
+lock_probe=0
+if command -v flock >/dev/null 2>&1; then
+  flock -n -E "$LOCK_HELD_EXIT" "$LOCK_FILE" true 2>/dev/null
+  lock_probe=$?
+else
+  note "flock is not installed, so the device lock cannot be checked before the run"
+fi
+
+if [[ "$lock_probe" -eq "$LOCK_HELD_EXIT" ]]; then
   skip "another alienfx-tray process holds $LOCK_FILE - this run would stand down without \
 claiming an interface, which proves nothing about the driver handback"
   summary "kernel-driver-reattach"
   exit $?
+elif [[ "$lock_probe" -ne 0 ]]; then
+  note "flock could not test $LOCK_FILE (exit $lock_probe) - running anyway"
 fi
 
 report_state "before:"

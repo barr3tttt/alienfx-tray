@@ -134,10 +134,8 @@ RunOutcome applyWithRetry(const ResolvedScheme& scheme, const LockStandDown& sta
     // Handing them back can itself fail, and that is only known once the close has run. Only
     // the warning crosses over: a domain that never had to be opened - a scheme with no
     // zones, say - has nothing to report from the release and keeps the result it earned.
-    for (Domain domain : kAllDomains) {
-        DomainStatus& status = domain == Domain::Keyboard ? result.keyboard : result.external;
-        status.interfaceLeftDetached = engine.interfaceLeftDetached(domain);
-    }
+    for (Domain domain : kAllDomains)
+        result.forDomain(domain).interfaceLeftDetached = engine.interfaceLeftDetached(domain);
 
     for (Domain domain : kAllDomains) {
         const DomainStatus& status = result.forDomain(domain);
@@ -229,8 +227,7 @@ ApplyResult applyDomainsWithRetry(LightingEngine& engine, const ResolvedScheme& 
     ApplyResult result;
     for (int attempt = 1;; ++attempt) {
         for (Domain domain : kAllDomains) {
-            DomainStatus& status =
-                domain == Domain::Keyboard ? result.keyboard : result.external;
+            DomainStatus& status = result.forDomain(domain);
             if (!mightStillComeGood(status.state)) continue;
 
             status = engine.applyDomain(domain, scheme);

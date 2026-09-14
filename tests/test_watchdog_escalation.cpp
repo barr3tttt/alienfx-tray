@@ -357,6 +357,9 @@ void TestWatchdogEscalation::theStateIsClassifiedWithoutADefaultArm() {
     QVERIFY(LightingController::escalatesOnWedge(DeviceState::Busy));
     QVERIFY(LightingController::escalatesOnWedge(DeviceState::Ready));
     QVERIFY(LightingController::escalatesOnWedge(DeviceState::Unknown));
+    // The one that reads most like "nothing to worry about": a worker that deferred for the
+    // lock and then wedged would otherwise promise an automatic retry forever.
+    QVERIFY(LightingController::escalatesOnWedge(DeviceState::Waiting));
     QVERIFY(!LightingController::escalatesOnWedge(DeviceState::Missing));
     QVERIFY(!LightingController::escalatesOnWedge(DeviceState::Error));
     QVERIFY(!LightingController::escalatesOnWedge(DeviceState::Unresponsive));

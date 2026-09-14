@@ -17,6 +17,9 @@ struct ApplyResult {
     [[nodiscard]] const DomainStatus& forDomain(Domain domain) const {
         return domain == Domain::Keyboard ? keyboard : external;
     }
+    [[nodiscard]] DomainStatus& forDomain(Domain domain) {
+        return domain == Domain::Keyboard ? keyboard : external;
+    }
 };
 
 // Turns a Scheme into device commands. Knows nothing about Qt, threads or USB - it talks to

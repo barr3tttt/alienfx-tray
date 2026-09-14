@@ -49,10 +49,13 @@ QString statusStyle(DeviceState state) {
     switch (state) {
         case DeviceState::Ready:
             return QStringLiteral("color: palette(text);");
-        case DeviceState::Busy:
+        // Waiting resolves itself - the worker is holding the frame and re-trying - so it
+        // does not need the user's attention. Busy does: nothing is re-trying it, and the
+        // usual cause is a udev rule the user has to go and add.
         case DeviceState::Waiting:
         case DeviceState::Unknown:
             return QStringLiteral("color: palette(mid);");
+        case DeviceState::Busy:
         case DeviceState::Missing:
         case DeviceState::Error:
         case DeviceState::Unresponsive:
