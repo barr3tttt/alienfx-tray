@@ -41,6 +41,22 @@ cmake --install build --prefix ~/.local
 On Fedora the build dependencies are `qt6-qtbase-devel qt6-qtsvg-devel cmake ninja-build
 gcc-c++`. On Debian and Ubuntu they are `qt6-base-dev qt6-svg-dev cmake ninja-build g++`.
 
+If you cannot install Qt6 development packages system-wide - no root, or a distribution
+that only ships the Qt6 runtime - the KDE SDK runtime carries a complete Qt6 toolchain and
+needs no privileges. Install it once with `flatpak install flathub org.kde.Sdk//6.10`, then
+run the same commands inside it:
+
+```sh
+flatpak run --filesystem=home --share=network --command=bash org.kde.Sdk//6.10 -c '
+  cd "$PWD" && cmake -S . -B build -G Ninja && cmake --build build &&
+  ctest --test-dir build --output-on-failure'
+```
+
+The resulting binary links against the host's own Qt6 runtime libraries, so it runs outside
+the sandbox normally. Configure a build tree with one toolchain or the other and do not mix
+them: the cached Qt paths differ, and a tree configured inside the SDK fails to reconfigure
+outside it.
+
 ## Device access
 
 Both controllers need to be reachable without root. On a distribution using systemd-logind

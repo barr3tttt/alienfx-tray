@@ -125,3 +125,14 @@ resume repaint anyway, so persistence would buy nothing and cost the safety net.
   only symptom is an undefined-reference-to-vtable link error with no hint at the cause.
   Binding the literal to a local first (`const std::string text = R"(...)"; writeAll(path,
   text);`) parses fine. `tests/test_config.cpp` uses that form throughout.
+- 2026-09-13: this project can be built without Qt6 development packages installed on the
+  host, and on at least one machine it has to be. The KDE SDK flatpak carries a full Qt6
+  toolchain under Debian multiarch paths that appear as `/usr/lib/x86_64-linux-gnu/cmake/Qt6`
+  once the runtime is mounted at `/usr`. Two consequences. A build tree configured inside
+  the SDK records those paths in `CMakeCache.txt`, so a later `cmake --build build` run
+  outside the SDK fails with "Could not find a package configuration file provided by Qt6"
+  even though the tree built minutes earlier - the cache is fine, the toolchain is simply
+  absent from that namespace. And the cache is the only surviving evidence of which
+  toolchain configured a tree, so read it before concluding a dependency was uninstalled:
+  `dnf history` showing no recent transaction means it was never a host package at all.
+  Build and test with the `flatpak run ... org.kde.Sdk//6.10` invocation in the README.
