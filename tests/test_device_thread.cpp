@@ -100,8 +100,8 @@ void TestDeviceThread::initTestCase() {
     registerMetaTypes();
 
     // A private lock directory. A tray running on the developer's own desktop holds
-    // $XDG_RUNTIME_DIR/alienfx-tray.lock, which would make the worker report Busy and skip
-    // the device call this test needs it to reach.
+    // $XDG_RUNTIME_DIR/alienfx-tray.lock, which would make the worker report Waiting and
+    // defer the device call this test needs it to reach.
     runtimeDir_ = std::make_unique<QTemporaryDir>();
     QVERIFY(runtimeDir_->isValid());
     previousRuntimeDir_ = qgetenv("XDG_RUNTIME_DIR");

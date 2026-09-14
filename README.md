@@ -76,15 +76,16 @@ Then `sudo udevadm control --reload && sudo udevadm trigger`.
 alienfx-tray                    run the tray icon
 alienfx-tray --apply            apply the saved scheme and exit
 alienfx-tray --off              black out every light and exit
-alienfx-tray --probe-external   light each external zone a different colour
-alienfx-tray --probe-external=N light one external zone on its own
+alienfx-tray --probe-external   identify the external lights by colour
+alienfx-tray --probe-external=N identify one external light on its own
 ```
 
 `--apply` never opens a display, which is what makes it usable from a resume hook.
 
 `--probe-external` exists because the external light IDs carry no self-description. The
 only way to learn which ID drives which fixture is to light one and look, so the probe
-lights them in distinct colours and you write down what you see.
+lights IDs 0-5 in six distinct colours - blacking out the rest - and you write down what you
+see. Pass a single ID to light that one white on its own when a shared colour is ambiguous.
 
 ## Applying at login and after resume
 

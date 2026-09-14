@@ -20,7 +20,7 @@ target_link_libraries(alienfx_core PUBLIC nlohmann_json::nlohmann_json)
 
 # --------------------------------------------------------------------------------------
 # alienfx_device - the only place AlienFX_SDK.h is included. It does `using namespace std;`
-# at file scope, so it is confined to two translation units behind the core interfaces.
+# at file scope, so it is confined to a single translation unit behind the core interfaces.
 # --------------------------------------------------------------------------------------
 add_library(alienfx_device STATIC
   device/usb_context.cpp

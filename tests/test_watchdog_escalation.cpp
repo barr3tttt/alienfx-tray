@@ -236,9 +236,10 @@ void TestWatchdogEscalation::editAZoneColour() {
     controller_->applyWorkingScheme(scheme);
 }
 
-// The case the escalation exists for. Both controllers last reported Busy - another claimant
-// holds them - and the next apply then wedges, so nothing will ever publish a status again.
-// A Busy left standing keeps promising a retry that is never coming.
+// The case the escalation exists for. Both controllers last reported Busy - the interface
+// could not be claimed - and the next apply then wedges, so nothing will ever publish a
+// status again. A Busy left standing reads as a controller that is merely occupied for the
+// moment, which is not what a wedged worker is.
 void TestWatchdogEscalation::bothDomainsBusyThenAWedgeStillReachesTheUser() {
     script_->keyboardOpenFails.store(asInt(DeviceState::Busy));
     script_->externalOpenFails.store(asInt(DeviceState::Busy));

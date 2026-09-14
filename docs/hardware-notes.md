@@ -187,10 +187,13 @@ every affected domain as `DeviceState::Unresponsive` through the ordinary per-do
 path, so a wedge reaches the UI rather than leaving the lights silently frozen. That state
 exists separately from `Error` because a refusal came back and a hang did not, and telling
 someone a controller "refused the last command" when it is hanging sends them looking for a
-udev rule instead of a stuck device. A domain last reported busy is escalated too: "another
-process is holding it, will retry on the next change" promises a recovery a wedged worker
-never delivers. The kernel reattaches `usbhid` when the usbfs descriptor closes on process
-exit, so even the walk-away recovers.
+udev rule instead of a stuck device. Escalation covers every state that has not already
+admitted failure - `Ready`, `Unknown`, `Busy` and `Waiting` - because each of them leaves the
+user expecting lighting that is not coming, `Waiting` most of all: it promises the frame will
+be repainted "automatically until it lets go", which a wedged worker never delivers.
+`Missing` and `Error` are left alone, having already said the domain is not working. The
+kernel reattaches `usbhid` when the usbfs descriptor closes on process exit, so even the
+walk-away recovers.
 
 ## Nothing persists unless asked
 

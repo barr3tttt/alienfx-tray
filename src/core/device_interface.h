@@ -65,7 +65,7 @@ struct DomainStatus {
 //
 // These also exist so core logic can be tested without a laptop attached, and so
 // AlienFX_SDK.h - which does `using namespace std;` at file scope - is included in exactly
-// two .cpp files and never leaks into the rest of the build.
+// one .cpp file and never leaks into the rest of the build.
 // ---------------------------------------------------------------------------------------
 
 class IKeyboardDevice {
