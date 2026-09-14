@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            qt6-base-dev libqt6svg6-dev libgl1-mesa-dev libudev-dev
+
+      # libusb, hidapi, loguru and nlohmann/json are fetched at pinned revisions, so this
+      # cache is keyed on the file that pins them.
+      - name: Cache fetched dependencies
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-${{ runner.os }}-${{ hashFiles('cmake/PinnedDependencies.cmake') }}
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build
+
+      # Every suite is guiless and needs no hardware. The tests that do need an Alienware
+      # laptop live in tests/e2e and skip themselves here.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: End-to-end scripts (skip without hardware)
+        run: tests/e2e/run-all.sh
+
+      - name: Install
+        run: cmake --install build --prefix "$RUNNER_TEMP/install"
+
+      - name: Check the installed layout
+        run: |
+          test -x "$RUNNER_TEMP/install/bin/alienfx-tray"
+          test -f "$RUNNER_TEMP/install/share/applications/alienfx-tray.desktop"
+          test -f "$RUNNER_TEMP/install/share/icons/hicolor/scalable/apps/alienfx-tray.svg"
+          "$RUNNER_TEMP/install/bin/alienfx-tray" --version
+
+  shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse the end-to-end scripts
+        run: |
+          for script in tests/e2e/*.sh; do
+            bash -n "$script"
+          done

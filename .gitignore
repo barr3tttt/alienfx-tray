@@ -1,0 +1,8 @@
+build/
+build-*/
+compile_commands.json
+.cache/
+*.user
+
+# Local agent/session state, never part of the project
+.claude/settings.local.json
