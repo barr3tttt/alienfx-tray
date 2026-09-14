@@ -45,8 +45,14 @@ QString schemeNameOf(const QListWidgetItem* item) {
     return item ? item->data(Qt::UserRole).toString() : QString();
 }
 
-QString statusStyle(DeviceState state) {
-    switch (state) {
+QString statusStyle(const DomainStatus& status) {
+    // Orthogonal to the state, and more consequential than most of it. The lighting can have
+    // worked perfectly and the USB interface still not have gone back to its kernel driver -
+    // on this hardware that interface is the built-in keyboard, and nothing is retrying it,
+    // so the row must not read like the ordinary success it otherwise is.
+    if (status.interfaceLeftDetached) return QStringLiteral("font-weight: bold;");
+
+    switch (status.state) {
         case DeviceState::Ready:
             return QStringLiteral("color: palette(text);");
         // Waiting resolves itself - the worker is holding the frame and re-trying - so it
@@ -410,14 +416,28 @@ void ControlPanel::refreshZoneEditor() {
 void ControlPanel::refreshSchemeList() {
     if (!schemeList_) return;
     const QString previous = schemeNameOf(schemeList_->currentItem());
+    const QString active = QString::fromStdString(controller_.config().activeSchemeName);
 
     schemeList_->clear();
+    QListWidgetItem* activeItem = nullptr;
     for (const Scheme& scheme : controller_.config().schemes) {
         const QString name = QString::fromStdString(scheme.name);
         auto* item = new QListWidgetItem(name, schemeList_);
         item->setData(Qt::UserRole, name);
         if (name == previous) schemeList_->setCurrentItem(item);
+        if (name == active) activeItem = item;
     }
+
+    // A rebuild always has to leave something current. Deleting the selected scheme removes
+    // the name this was restoring, and Activate and Delete both act on the selection - so
+    // without a fallback they stay enabled and silently do nothing when pressed.
+    if (!schemeList_->currentItem()) {
+        if (activeItem)
+            schemeList_->setCurrentItem(activeItem);
+        else if (schemeList_->count() > 0)
+            schemeList_->setCurrentRow(0);
+    }
+
     refreshActiveSchemeMarker();
     refreshDeleteButton();
 }
@@ -471,7 +491,7 @@ void ControlPanel::onStatusChanged(Domain domain, DomainStatus status) {
     QLabel* label = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
     if (!label) return;
     label->setText(QString::fromStdString(describe(domain, status)));
-    label->setStyleSheet(statusStyle(status.state));
+    label->setStyleSheet(statusStyle(status));
 }
 
 }  // namespace alienfx::ui
