@@ -21,6 +21,14 @@ alienfx_add_test(test_config alienfx_core)
 alienfx_add_test(test_startup_integration alienfx_app)
 alienfx_add_test(test_cli_options alienfx_app)
 
+# What --probe-external paints. The mode is how the external light IDs are mapped to physical
+# fixtures at all, so a property leaking in from the active scheme yields a wrong answer the
+# user then writes down as fact.
+alienfx_add_test(test_probe_mode alienfx_app)
+
+# That a wedged device thread reaches the UI rather than hiding behind a stale Busy.
+alienfx_add_test(test_watchdog_escalation alienfx_app)
+
 # The kernel-driver reattach reporting. tests/e2e/kernel-driver-reattach.sh drives the real
 # binary and asserts the happy-path sysfs end state, so it cannot reach the error branch.
 alienfx_add_test(test_usb_reattach alienfx_core)

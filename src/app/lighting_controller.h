@@ -55,6 +55,18 @@ class LightingController : public QObject {
     // Re-sends the current state. Used after a device comes back.
     void reapply();
 
+    // Writes a debounced edit out now, rather than waiting for the quiet period. The colour
+    // pickers call this when the user lets go, so a drag costs one write at the end instead
+    // of one per settling period.
+    void flushPendingSave();
+
+    // Whether a domain last published in this state should be escalated when an apply misses
+    // the watchdog deadline. Busy is included deliberately: "another process is holding it,
+    // will retry on the next change" promises a recovery a wedged worker never delivers, so
+    // leaving that text up hides the exact hang the watchdog exists to surface. Missing and
+    // Error already name a specific fault and keep it.
+    [[nodiscard]] static bool escalatesOnWedge(DeviceState state);
+
     // The one bounded wait in the process. Quitting cannot hang on a wedged controller:
     // DeviceThread gives up and walks away rather than joining. See DeviceThread::stop.
     void shutdown();

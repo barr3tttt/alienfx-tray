@@ -4,6 +4,9 @@
 #include <optional>
 #include <string>
 
+#include "core/config.h"
+#include "core/scheme.h"
+
 namespace alienfx {
 
 // Headless entry points. None of these create a QApplication or touch a display: the resume
@@ -27,5 +30,14 @@ int runOffMode(std::ostream& out, std::ostream& err);
 // confirmed one.
 int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                          std::ostream& err);
+
+// Exactly what a probe run paints, with no device, no config file and no output involved.
+//
+// Split out so the one thing this mode must get right is stated in one place and can be
+// asserted without hardware. Everything the probe paints on the external controller is its
+// own; only the keyboard half is inherited, so the mode does not repaint the lighting
+// surrounding the lights the user is being asked to look at.
+[[nodiscard]] ResolvedScheme buildProbeOutput(const Config& config,
+                                              std::optional<int> singleLightId);
 
 }  // namespace alienfx

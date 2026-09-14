@@ -151,6 +151,8 @@ QWidget* ControlPanel::buildKeyboardTab() {
         working_.keyboard.color = toRgb(color);
         pushScheme();
     });
+    connect(keyboardColor_, &ColorPicker::colorCommitted, this,
+            [this] { controller_.flushPendingSave(); });
     connect(keyboardBrightness_, &QSlider::valueChanged, this, [this](int percent) {
         keyboardBrightnessValue_->setText(QStringLiteral("%1%").arg(percent));
         if (loading_) return;
@@ -235,6 +237,9 @@ QWidget* ControlPanel::buildExternalTab() {
         working_.external.zones[static_cast<std::size_t>(index)].color.battery = toRgb(color);
         pushScheme();
     });
+    for (ColorPicker* picker : {zoneColor_, zoneBatteryColor_})
+        connect(picker, &ColorPicker::colorCommitted, this,
+                [this] { controller_.flushPendingSave(); });
     connect(zoneSeparateBattery_, &QCheckBox::toggled, this, [this](bool separate) {
         zoneBatteryColor_->setEnabled(separate);
         if (loading_) return;

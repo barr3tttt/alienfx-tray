@@ -26,6 +26,26 @@ constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
 // does not sit around forever if something is genuinely stuck.
 constexpr auto kLockTimeout = std::chrono::seconds(25);
 
+// Six unmistakable, well-separated colours for the IDs known to drive visible lights, and
+// black everywhere else so anything that does light up stands out.
+constexpr struct {
+    std::uint8_t id;
+    Rgb color;
+    const char* name;
+} kProbeColors[] = {
+    {0, Rgb{255, 0, 0}, "red"},        {1, Rgb{0, 255, 0}, "green"},
+    {2, Rgb{0, 0, 255}, "blue"},       {3, Rgb{255, 255, 0}, "yellow"},
+    {4, Rgb{255, 0, 255}, "magenta"},  {5, Rgb{0, 255, 255}, "cyan"},
+};
+
+Rgb probeColor(std::uint8_t id, std::optional<int> singleLightId) {
+    if (singleLightId)
+        return id == static_cast<std::uint8_t>(*singleLightId) ? Rgb{255, 255, 255} : Rgb{};
+    for (const auto& entry : kProbeColors)
+        if (entry.id == id) return entry.color;
+    return Rgb{};
+}
+
 int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream& err) {
     silenceSdkLogging();
 
@@ -101,18 +121,6 @@ int runOffMode(std::ostream& out, std::ostream& err) {
 
 int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                          std::ostream& err) {
-    // Six unmistakable, well-separated colours for the IDs known to drive visible lights,
-    // and black everywhere else so anything that does light up stands out.
-    static constexpr struct {
-        std::uint8_t id;
-        Rgb color;
-        const char* name;
-    } kProbeColors[] = {
-        {0, Rgb{255, 0, 0}, "red"},        {1, Rgb{0, 255, 0}, "green"},
-        {2, Rgb{0, 0, 255}, "blue"},       {3, Rgb{255, 255, 0}, "yellow"},
-        {4, Rgb{255, 0, 255}, "magenta"},  {5, Rgb{0, 255, 255}, "cyan"},
-    };
-
     if (singleLightId && (*singleLightId < 0 || *singleLightId >= kExternalLightIdCount)) {
         err << "alienfx-tray: external light ID must be between 0 and "
             << (kExternalLightIdCount - 1) << "\n";
@@ -122,23 +130,6 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
     LoadResult loaded = loadConfig(configPath());
     if (!loaded.error.empty())
         err << "alienfx-tray: " << loaded.error << " - using defaults\n";
-
-    // The keyboard keeps whatever the active scheme gives it. This mode is run to identify
-    // the external lights, so it must not repaint the lighting around the ones being read.
-    Scheme scheme = loaded.config.activeScheme();
-    scheme.name = "external probe";
-
-    scheme.external.zones.clear();
-    for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id) {
-        Rgb color{};
-        if (singleLightId) {
-            if (id == static_cast<std::uint8_t>(*singleLightId)) color = Rgb{255, 255, 255};
-        } else {
-            for (const auto& entry : kProbeColors)
-                if (entry.id == id) color = entry.color;
-        }
-        scheme.external.zones.push_back(ExternalZone{id, defaultZoneName(id), uniform(color)});
-    }
 
     if (singleLightId) {
         out << "Lighting external light ID " << *singleLightId
@@ -162,8 +153,26 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
         out << "The lights are currently switched off, so nothing will light up. Turn them "
                "back\non and run this again.\n\n";
 
-    return applyWithRetry(resolveOutput(LightingState{std::move(scheme), loaded.config.lightsOn}),
-                          out, err);
+    return applyWithRetry(buildProbeOutput(loaded.config, singleLightId), out, err);
+}
+
+ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleLightId) {
+    Scheme scheme;
+    scheme.name = "external probe";
+
+    // The one deliberate inheritance, and the only one. The keyboard keeps what the active
+    // scheme gives it so the mode does not repaint the lighting around the lights being read.
+    scheme.keyboard = config.activeScheme().keyboard;
+
+    // Every external property is stated here rather than carried over from the active scheme.
+    // Anything inherited can make the light the user is being asked to look at invisible, and
+    // a diagnostic that identifies lights by eye must not be dimmable by unrelated config.
+    scheme.external.brightness = Brightness{Brightness::kMax};
+    for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id)
+        scheme.external.zones.push_back(
+            ExternalZone{id, defaultZoneName(id), uniform(probeColor(id, singleLightId))});
+
+    return resolveOutput(LightingState{std::move(scheme), config.lightsOn});
 }
 
 }  // namespace alienfx

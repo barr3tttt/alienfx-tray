@@ -77,8 +77,8 @@ class ShadeBar : public QWidget {
 };
 
 // Wheel plus shade bar plus a hex field, kept in sync. colorChanged fires continuously
-// during a drag; colorCommitted fires once the user lets go, for anything that should only
-// happen on a settled value.
+// during a drag and drives the live preview; colorCommitted fires once the user lets go and
+// is what writes the edit to disk, so a drag costs one write rather than one per pause in it.
 class ColorPicker : public QWidget {
     Q_OBJECT
 

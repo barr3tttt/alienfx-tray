@@ -115,6 +115,10 @@ void LightingController::deleteScheme(const QString& name) {
 
 void LightingController::reapply() { submitCurrent(); }
 
+void LightingController::flushPendingSave() {
+    if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
+}
+
 void LightingController::onWorkerStatus(Domain domain, DomainStatus status) {
     (domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_) = status;
     emit statusChanged(domain, status);
@@ -143,13 +147,28 @@ DomainStatus LightingController::watchdogStamp() {
     return DomainStatus{DeviceState::Error, "controller stopped responding"};
 }
 
+bool LightingController::escalatesOnWedge(DeviceState state) {
+    switch (state) {
+        case DeviceState::Ready:
+        case DeviceState::Unknown:
+        case DeviceState::Busy:
+            return true;
+        case DeviceState::Missing:
+        case DeviceState::Error:
+            return false;
+    }
+    return true;
+}
+
 void LightingController::onApplyWatchdog() {
     // The apply never came back. Rather than let the UI imply everything is fine, say what
-    // is actually true: the worker is stuck on a device that is not answering.
+    // is actually true: the worker is stuck on a device that is not answering. Which of the
+    // two it is stuck on is unknowable from here, so every domain still promising progress
+    // is escalated rather than guessing one.
     const DomainStatus stuck = watchdogStamp();
     for (Domain domain : kAllDomains) {
         DomainStatus& slot = domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
-        if (slot.state != DeviceState::Ready && slot.state != DeviceState::Unknown) continue;
+        if (!escalatesOnWedge(slot.state)) continue;
         (domain == Domain::Keyboard ? keyboardBeforeWatchdog_ : externalBeforeWatchdog_) = slot;
         slot = stuck;
         watchdogTripped_ = true;
