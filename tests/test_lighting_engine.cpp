@@ -14,6 +14,12 @@ static int asInt(alienfx::DeviceState state) { return static_cast<int>(state); }
 using namespace alienfx;
 using namespace alienfx::test;
 
+// The engine only accepts a resolved scheme. These cases are about what reaches the wire
+// rather than about the lights-off path, so they resolve with the lights on.
+static ResolvedScheme lit(const Scheme& scheme) {
+    return resolveOutput(LightingState{scheme, true});
+}
+
 class TestLightingEngine : public QObject {
     Q_OBJECT
 
@@ -27,12 +33,12 @@ class TestLightingEngine : public QObject {
         LightingEngine engine(std::move(keyboard), std::move(external));
         QCOMPARE(keyboardView->openCount, 0);
 
-        engine.apply(defaultScheme());
+        engine.apply(lit(defaultScheme()));
         QCOMPARE(keyboardView->openCount, 1);
         QVERIFY(engine.anyDeviceOpen());
 
         // A second apply reuses the open handle rather than thrashing the claim.
-        engine.apply(defaultScheme());
+        engine.apply(lit(defaultScheme()));
         QCOMPARE(keyboardView->openCount, 1);
 
         engine.releaseDevices();
@@ -49,7 +55,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(defaultScheme());
+        engine.apply(lit(defaultScheme()));
 
         QCOMPARE(externalView->brightnessCalls.size(), std::size_t(1));
         const auto& ids = externalView->brightnessCalls.front().lightIds;
@@ -74,7 +80,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
 
         QCOMPARE(externalView->zoneCalls.size(), std::size_t(2));
         QCOMPARE(externalView->zoneCalls[0].lightId, std::uint8_t(1));
@@ -94,7 +100,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(defaultScheme());
+        const ApplyResult result = engine.apply(lit(defaultScheme()));
 
         QCOMPARE(asInt(result.keyboard.state), asInt(DeviceState::Missing));
         QVERIFY(result.external.ok());
@@ -109,7 +115,7 @@ class TestLightingEngine : public QObject {
         external->failOpen = true;
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(defaultScheme());
+        const ApplyResult result = engine.apply(lit(defaultScheme()));
 
         QCOMPARE(asInt(result.external.state), asInt(DeviceState::Busy));
         QVERIFY(result.keyboard.ok());
@@ -123,7 +129,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(defaultScheme());
+        const ApplyResult result = engine.apply(lit(defaultScheme()));
 
         QCOMPARE(asInt(result.external.state), asInt(DeviceState::Error));
         QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
@@ -144,7 +150,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(scheme);
+        const ApplyResult result = engine.apply(lit(scheme));
         QVERIFY(result.external.ok());
 
         engine.releaseDevices();
@@ -169,7 +175,7 @@ class TestLightingEngine : public QObject {
         auto external = std::make_unique<FakeExternalDevice>();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(defaultScheme());
+        const ApplyResult result = engine.apply(lit(defaultScheme()));
         QVERIFY(result.keyboard.ok());
         QVERIFY2(!result.keyboard.interfaceLeftDetached, "nothing has been released yet");
 
@@ -192,7 +198,7 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        const ApplyResult result = engine.apply(scheme);
+        const ApplyResult result = engine.apply(lit(scheme));
 
         QVERIFY(result.external.ok());
         QCOMPARE(externalView->openCount, 0);
@@ -210,19 +216,19 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         const std::size_t firstPass = externalView->zoneCalls.size();
         QCOMPARE(firstPass, scheme.external.zones.size());
 
         // Nothing changed: nothing goes on the wire.
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass);
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(1));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
 
         // One zone changed: exactly one zone goes on the wire.
         scheme.external.zones[2].color = uniform(Rgb{7, 7, 7});
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass + 1);
         QCOMPARE(externalView->zoneCalls.back().lightId, scheme.external.zones[2].lightId);
         QCOMPARE(externalView->zoneCalls.back().acColor, (Rgb{7, 7, 7}));
@@ -236,19 +242,19 @@ class TestLightingEngine : public QObject {
         FakeKeyboardDevice* keyboardView = keyboard.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(1));
 
         // Colour only: the brightness register is left alone.
         scheme.keyboard.color = Rgb{1, 2, 3};
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
 
         // Brightness only: the colour is not resent.
         scheme.keyboard.brightness = Brightness::fromPercent(20);
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(2));
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
     }
@@ -265,11 +271,11 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         const std::size_t firstPass = externalView->zoneCalls.size();
 
         engine.releaseDevices();
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
 
         QCOMPARE(externalView->zoneCalls.size(), firstPass * 2);
         QCOMPARE(externalView->openCount, 2);
@@ -288,11 +294,11 @@ class TestLightingEngine : public QObject {
         externalView->failZone = true;
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
 
         externalView->failZone = false;
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), 1 + scheme.external.zones.size());
     }
 
@@ -305,11 +311,11 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         const std::size_t firstPass = externalView->zoneCalls.size();
 
         scheme.external.zones.front().name = "Rear ring";
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass);
     }
 
@@ -323,11 +329,11 @@ class TestLightingEngine : public QObject {
         FakeExternalDevice* externalView = external.get();
 
         LightingEngine engine(std::move(keyboard), std::move(external));
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->brightnessCalls.size(), std::size_t(1));
 
         scheme.external.zones.pop_back();
-        engine.apply(scheme);
+        engine.apply(lit(scheme));
         QCOMPARE(externalView->brightnessCalls.size(), std::size_t(2));
         QCOMPARE(externalView->brightnessCalls.back().lightIds.size(),
                  scheme.external.zones.size());
@@ -335,7 +341,7 @@ class TestLightingEngine : public QObject {
 
     void missingBackendsDegradeInsteadOfCrashing() {
         LightingEngine engine(nullptr, nullptr);
-        const ApplyResult result = engine.apply(defaultScheme());
+        const ApplyResult result = engine.apply(lit(defaultScheme()));
 
         QCOMPARE(asInt(result.keyboard.state), asInt(DeviceState::Missing));
         QCOMPARE(asInt(result.external.state), asInt(DeviceState::Missing));

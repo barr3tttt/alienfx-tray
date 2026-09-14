@@ -2,6 +2,8 @@
 
 #include <QTimer>
 
+#include <utility>
+
 #include "app/device_thread.h"
 #include "app/device_worker.h"
 
@@ -13,7 +15,7 @@ LightingController::LightingController(QObject* parent) : QObject(parent) {
     if (!loaded.error.empty()) {
         // A config we cannot read must never mean no lighting. Fall back to the defaults and
         // say so in the UI rather than starting dark.
-        configError_ = QString::fromStdString(loaded.error);
+        setConfigError(QString::fromStdString(loaded.error));
     }
     working_ = config_.activeScheme();
 
@@ -22,7 +24,7 @@ LightingController::LightingController(QObject* parent) : QObject(parent) {
     if (!loaded.fileExisted) {
         std::string error;
         if (!saveConfig(config_, configPath(), error))
-            configError_ = QString::fromStdString(error);
+            setConfigError(QString::fromStdString(error));
     }
 
     saveTimer_ = new QTimer(this);
@@ -158,8 +160,16 @@ void LightingController::onApplyWatchdog() {
 void LightingController::saveConfigNow() {
     if (saveTimer_) saveTimer_->stop();
     std::string error;
-    if (!saveConfig(config_, configPath(), error))
-        configError_ = QString::fromStdString(error);
+    // A successful write also retires an unreadable-config complaint: the file on disk is
+    // now ours and parseable, so the warning would be describing a state that is over.
+    setConfigError(saveConfig(config_, configPath(), error) ? QString()
+                                                            : QString::fromStdString(error));
+}
+
+void LightingController::setConfigError(QString error) {
+    if (configError_ == error) return;
+    configError_ = std::move(error);
+    emit configErrorChanged(configError_);
 }
 
 void LightingController::shutdown() {

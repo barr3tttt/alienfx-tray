@@ -76,8 +76,8 @@ std::vector<Scheme> builtinSchemes() {
     return schemes;
 }
 
-Scheme resolveOutput(const LightingState& state) {
-    if (state.lightsOn) return state.scheme;
+ResolvedScheme resolveOutput(const LightingState& state) {
+    if (state.lightsOn) return ResolvedScheme(state.scheme);
 
     constexpr Rgb black{0, 0, 0};
     Scheme off = state.scheme;
@@ -85,7 +85,7 @@ Scheme resolveOutput(const LightingState& state) {
     // goes to black, which is the one way to darken this hardware that it can come back from.
     off.keyboard.color = black;
     for (ExternalZone& zone : off.external.zones) zone.color = uniform(black);
-    return off;
+    return ResolvedScheme(std::move(off));
 }
 
 }  // namespace alienfx

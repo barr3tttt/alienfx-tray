@@ -36,7 +36,7 @@ class DeviceThread : public QObject {
     DeviceThread& operator=(const DeviceThread&) = delete;
 
     // Returns the generation the caller can expect back from applyFinished. Never blocks.
-    quint64 submit(const Scheme& scheme);
+    quint64 submit(const ResolvedScheme& scheme);
 
     // Asks the worker to release its devices, then waits at most `limit` for the thread to
     // finish. Returns false if it was still running when the limit expired, in which case it

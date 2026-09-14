@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/color.h"
@@ -132,9 +133,26 @@ struct LightingState {
     friend bool operator==(const LightingState&, const LightingState&) = default;
 };
 
-// The scheme as it should actually be painted. "Off" is a steady effect painted black -
-// never effType 0, never zero brightness, because both of those are how the keyboard gets
-// stuck dark.
-[[nodiscard]] Scheme resolveOutput(const LightingState& state);
+// The scheme as it should actually be painted, and the only thing the engine will accept.
+//
+// It exists as a type rather than as a convention because forgetting to resolve is silent
+// and expensive: the lights come back on after the user switched them off, and nothing about
+// the call site looks wrong. Only resolveOutput can make one, so a caller that hands the
+// engine a raw Scheme fails to compile instead - the same standard as KeyboardEffect, whose
+// range cannot express the byte that leaves the keyboard dark.
+class ResolvedScheme {
+   public:
+    [[nodiscard]] const Scheme& scheme() const { return scheme_; }
+
+   private:
+    friend ResolvedScheme resolveOutput(const LightingState& state);
+    explicit ResolvedScheme(Scheme scheme) : scheme_(std::move(scheme)) {}
+
+    Scheme scheme_;
+};
+
+// "Off" is a steady effect painted black - never effType 0, never zero brightness, because
+// both of those are how the keyboard gets stuck dark.
+[[nodiscard]] ResolvedScheme resolveOutput(const LightingState& state);
 
 }  // namespace alienfx

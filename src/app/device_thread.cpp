@@ -27,7 +27,7 @@ DeviceThread::DeviceThread(DeviceWorker* worker, QObject* parent)
 
 DeviceThread::~DeviceThread() { stop(kStopTimeout); }
 
-quint64 DeviceThread::submit(const Scheme& scheme) {
+quint64 DeviceThread::submit(const ResolvedScheme& scheme) {
     if (!worker_) return 0;
     return worker_->submit(scheme);
 }

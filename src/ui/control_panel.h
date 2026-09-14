@@ -36,6 +36,7 @@ class ControlPanel : public QWidget {
 
    private slots:
     void onStatusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
+    void onConfigErrorChanged(const QString& error);
 
    private:
     QWidget* buildKeyboardTab();
@@ -76,6 +77,7 @@ class ControlPanel : public QWidget {
     QPushButton* startupToggle_ = nullptr;
 
     // Status strip
+    QLabel* configStatus_ = nullptr;
     QLabel* keyboardStatus_ = nullptr;
     QLabel* externalStatus_ = nullptr;
 };

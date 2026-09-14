@@ -27,10 +27,10 @@ LightingEngine::LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
                                std::unique_ptr<IExternalDevice> external)
     : keyboard_(std::move(keyboard)), external_(std::move(external)) {}
 
-ApplyResult LightingEngine::apply(const Scheme& scheme) {
+ApplyResult LightingEngine::apply(const ResolvedScheme& resolved) {
     ApplyResult result;
-    result.keyboard = applyKeyboard(scheme.keyboard);
-    result.external = applyExternal(scheme.external);
+    result.keyboard = applyKeyboard(resolved.scheme().keyboard);
+    result.external = applyExternal(resolved.scheme().external);
     return result;
 }
 

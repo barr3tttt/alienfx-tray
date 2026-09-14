@@ -26,7 +26,7 @@ constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
 // does not sit around forever if something is genuinely stuck.
 constexpr auto kLockTimeout = std::chrono::seconds(25);
 
-int applyWithRetry(const Scheme& scheme, std::ostream& out, std::ostream& err) {
+int applyWithRetry(const ResolvedScheme& scheme, std::ostream& out, std::ostream& err) {
     silenceSdkLogging();
 
     UsbContext context;
@@ -158,7 +158,12 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
     out << "Nothing is written to device memory, so this is undone by a reboot, a resume or\n"
            "the next scheme you apply.\n\n";
 
-    return applyWithRetry(scheme, out, err);
+    if (!loaded.config.lightsOn)
+        out << "The lights are currently switched off, so nothing will light up. Turn them "
+               "back\non and run this again.\n\n";
+
+    return applyWithRetry(resolveOutput(LightingState{std::move(scheme), loaded.config.lightsOn}),
+                          out, err);
 }
 
 }  // namespace alienfx

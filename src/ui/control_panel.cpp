@@ -71,15 +71,21 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
     tabs->addTab(buildExternalTab(), tr("External"));
     tabs->addTab(buildSchemesTab(), tr("Schemes"));
 
+    configStatus_ = new QLabel(this);
     keyboardStatus_ = new QLabel(this);
     externalStatus_ = new QLabel(this);
-    for (QLabel* label : {keyboardStatus_, externalStatus_}) {
+    for (QLabel* label : {configStatus_, keyboardStatus_, externalStatus_}) {
         label->setWordWrap(true);
         label->setTextInteractionFlags(Qt::TextSelectableByMouse);
     }
+    // The config problem gets a line of its own. Sharing the keyboard's meant the next
+    // device status update erased the only notice anywhere that the user's saved schemes
+    // are not the ones being painted.
+    configStatus_->setStyleSheet(QStringLiteral("font-weight: bold;"));
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(tabs, 1);
+    layout->addWidget(configStatus_);
     layout->addWidget(keyboardStatus_);
     layout->addWidget(externalStatus_);
 
@@ -93,15 +99,14 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
             &ControlPanel::refreshActiveSchemeMarker);
     connect(&controller_, &LightingController::schemeListChanged, this,
             &ControlPanel::refreshSchemeList);
+    connect(&controller_, &LightingController::configErrorChanged, this,
+            &ControlPanel::onConfigErrorChanged);
 
     refreshFromController();
     refreshSchemeList();
     refreshStartupIntegration();
     for (Domain domain : kAllDomains) onStatusChanged(domain, controller_.status(domain));
-
-    if (!controller_.configError().isEmpty()) {
-        keyboardStatus_->setText(tr("Configuration problem: %1").arg(controller_.configError()));
-    }
+    onConfigErrorChanged(controller_.configError());
 }
 
 // ---------------------------------------------------------------------------- keyboard ---
@@ -443,6 +448,13 @@ void ControlPanel::refreshStartupIntegration() {
         tr("Rewrites %1 so the existing login unit and resume hook apply your active "
            "scheme. Nothing else is installed or enabled.")
             .arg(QString::fromStdString(status.shimPath.string())));
+}
+
+void ControlPanel::onConfigErrorChanged(const QString& error) {
+    if (!configStatus_) return;
+    configStatus_->setText(error.isEmpty() ? QString()
+                                           : tr("Configuration problem: %1").arg(error));
+    configStatus_->setVisible(!error.isEmpty());
 }
 
 void ControlPanel::onStatusChanged(Domain domain, DomainStatus status) {

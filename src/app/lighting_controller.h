@@ -70,6 +70,10 @@ class LightingController : public QObject {
     void schemeListChanged();
     void lightsOnChanged(bool on);
     void statusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
+    // The config on disk could not be read, or could not be written back. Separate from
+    // statusChanged because it outlives any one device state and has nothing to do with the
+    // hardware: the user is running on defaults and their saved schemes are not in play.
+    void configErrorChanged(const QString& error);
 
    private slots:
     void onWorkerStatus(alienfx::Domain domain, alienfx::DomainStatus status);
@@ -79,6 +83,7 @@ class LightingController : public QObject {
 
    private:
     void submitCurrent();
+    void setConfigError(QString error);
     [[nodiscard]] static DomainStatus watchdogStamp();
 
     Config config_;

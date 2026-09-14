@@ -60,7 +60,7 @@ class DeviceWorker : public QObject {
 
     // Callable from any thread. Replaces whatever was pending and returns the generation
     // the caller can expect back from applyFinished, so a superseded apply is recognisable.
-    quint64 submit(const Scheme& scheme);
+    quint64 submit(const ResolvedScheme& scheme);
 
    public slots:
     // Runs on the worker thread once it starts.
@@ -95,7 +95,7 @@ class DeviceWorker : public QObject {
     QTimer* externalIdleTimer_ = nullptr;
 
     QMutex mutex_;
-    std::optional<Scheme> pending_;
+    std::optional<ResolvedScheme> pending_;
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
     bool shuttingDown_ = false;

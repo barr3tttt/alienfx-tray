@@ -126,7 +126,7 @@ void TestDeviceThread::stopAbandonsAWedgedWorkerRatherThanJoiningIt() {
 
     Scheme scheme;
     scheme.external.zones.push_back(ExternalZone{0, "probe", uniform(Rgb{255, 0, 0})});
-    QVERIFY(thread->submit(scheme) > 0);
+    QVERIFY(thread->submit(resolveOutput(LightingState{scheme, true})) > 0);
 
     QTRY_VERIFY_WITH_TIMEOUT(wedge->entered.load(), 5000);
 
@@ -156,7 +156,7 @@ void TestDeviceThread::stopReturnsTrueWhenTheWorkerIsHealthy() {
     QSignalSpy finished(&thread, &DeviceThread::applyFinished);
     Scheme scheme;
     scheme.external.zones.push_back(ExternalZone{0, "probe", uniform(Rgb{0, 255, 0})});
-    const quint64 generation = thread.submit(scheme);
+    const quint64 generation = thread.submit(resolveOutput(LightingState{scheme, true}));
 
     QVERIFY(finished.wait(5000));
     QCOMPARE(finished.first().at(0).value<quint64>(), generation);

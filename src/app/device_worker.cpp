@@ -46,7 +46,7 @@ void DeviceWorker::initialise() {
     QMetaObject::invokeMethod(this, &DeviceWorker::processPending, Qt::QueuedConnection);
 }
 
-quint64 DeviceWorker::submit(const Scheme& scheme) {
+quint64 DeviceWorker::submit(const ResolvedScheme& scheme) {
     quint64 generation = 0;
     {
         QMutexLocker locker(&mutex_);
@@ -64,12 +64,12 @@ quint64 DeviceWorker::submit(const Scheme& scheme) {
 void DeviceWorker::processPending() {
     scheduled_.store(false);
 
-    Scheme scheme;
+    std::optional<ResolvedScheme> scheme;
     quint64 generation = 0;
     {
         QMutexLocker locker(&mutex_);
         if (shuttingDown_ || !pending_) return;
-        scheme = std::move(*pending_);
+        scheme = std::move(pending_);
         pending_.reset();
         generation = generation_;
     }
@@ -87,7 +87,7 @@ void DeviceWorker::processPending() {
         return;
     }
 
-    const ApplyResult result = engine_->apply(scheme);
+    const ApplyResult result = engine_->apply(*scheme);
 
     publishStatus(Domain::Keyboard, result.keyboard);
     publishStatus(Domain::External, result.external);

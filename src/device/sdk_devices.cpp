@@ -93,8 +93,6 @@ void SdkDeviceBase::close() {
     device_.reset();
     const bool reattached = context_.reattachKernelDriver(id_.vendorId, id_.productId);
 
-    if (status_.state == DeviceState::Ready) status_.detail.clear();
-
     // Releasing the handle always happens, so close() never fails - but a driverless
     // interface costs the user a working keyboard until it is reattached or the machine
     // reboots, which is far too expensive to close over in silence. The state is left alone

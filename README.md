@@ -128,18 +128,24 @@ for session in $(loginctl list-sessions --no-legend | awk '{ print $1 }'); do
     esac
     user=$(loginctl show-session "$session" -p Name --value)
 
+    # Backgrounded, because systemd holds the resume transition until this script returns.
     # $HOME must stay single-quoted: the hook runs as root, so a double-quoted one would
-    # expand to /root before su ever sees it. Failures go to the journal rather than
+    # expand to /root before su ever sees it. Output goes to the journal rather than
     # /dev/null - a hook that fails silently looks installed while the lights stay wrong.
-    su - "$user" -c '$HOME/.local/bin/alienfx-apply' ||
-        echo "alienfx: restoring lighting for $user failed with status $?" >&2
+    { su - "$user" -c '$HOME/.local/bin/alienfx-apply' ||
+        echo "restoring lighting for $user failed with status $?"; } 2>&1 |
+        logger -t alienfx &
 done
 exit 0
 ```
 
-The hook runs while systemd holds the resume, so it is deliberately synchronous: a colour
-change costs a few hundred milliseconds, and backgrounding it would throw away the exit
-status this reports.
+Read a failure back with `journalctl -t alienfx`.
+
+Backgrounding matters here. `alienfx-apply` is not quick on the resume path: it waits up to
+25 seconds for a running tray to release the device lock, and then polls for up to another
+10 seconds while a controller that has not been re-enumerated yet reports itself missing -
+which is the ordinary case immediately after a wake, not a rare one. Run synchronously, that
+is up to about 35 seconds of frozen screen after opening the lid, every single time.
 
 ## Configuration
 

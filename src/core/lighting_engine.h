@@ -40,7 +40,7 @@ class LightingEngine {
     LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
                    std::unique_ptr<IExternalDevice> external);
 
-    ApplyResult apply(const Scheme& scheme);
+    ApplyResult apply(const ResolvedScheme& resolved);
 
     // Release both USB claims. Called on shutdown and from the destructor.
     void releaseDevices();
