@@ -54,25 +54,20 @@ class TestProbeMode : public QObject {
     void everyExternalIdIsPaintedWithTheProbesOwnColours() {
         const Scheme painted = buildProbeOutput(awkwardConfig(), std::nullopt).scheme();
 
-        QCOMPARE(painted.external.zones.size(), std::size_t(kExternalLightIdCount));
+        QCOMPARE(painted.external.zones.size(), std::size(kDefaultExternalLightIds));
         QCOMPARE(zone(painted, 0)->color.ac, (Rgb{255, 0, 0}));
         QCOMPARE(zone(painted, 1)->color.ac, (Rgb{0, 255, 0}));
         QCOMPARE(zone(painted, 2)->color.ac, (Rgb{0, 0, 255}));
         QCOMPARE(zone(painted, 3)->color.ac, (Rgb{255, 255, 0}));
         QCOMPARE(zone(painted, 4)->color.ac, (Rgb{255, 0, 255}));
         QCOMPARE(zone(painted, 5)->color.ac, (Rgb{0, 255, 255}));
-
-        // The IDs with no known fixture are driven black rather than left out, so anything
-        // that does light up is unambiguous.
-        for (std::uint8_t id = 6; id < kExternalLightIdCount; ++id)
-            QCOMPARE(zone(painted, id)->color.ac, (Rgb{0, 0, 0}));
     }
 
     void aSingleIdProbeLightsOnlyThatId() {
         const Scheme painted = buildProbeOutput(awkwardConfig(), 3).scheme();
 
         QCOMPARE(painted.external.brightness.value(), Brightness::kMax);
-        for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id)
+        for (std::uint8_t id : kDefaultExternalLightIds)
             QCOMPARE(zone(painted, id)->color.ac,
                      id == 3 ? (Rgb{255, 255, 255}) : (Rgb{0, 0, 0}));
     }
@@ -91,7 +86,7 @@ class TestProbeMode : public QObject {
 
         const Scheme painted = buildProbeOutput(config, 3).scheme();
         QCOMPARE(painted.keyboard.color, (Rgb{0, 0, 0}));
-        for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id)
+        for (std::uint8_t id : kDefaultExternalLightIds)
             QCOMPARE(zone(painted, id)->color.ac, (Rgb{0, 0, 0}));
     }
 };

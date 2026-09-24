@@ -85,7 +85,7 @@ class SdkExternalDevice final : public SdkDeviceBase, public IExternalDevice {
     bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override;
     bool commit() override;
 
-   private:
+private:
     // AlienFX_SDK::Functions::SetPowerAction reaches WaitForReady(), whose APIv4 branch is
     // `while (!IsDeviceReady()) usleep(20);` - an unbounded spin with no timeout.
     //
@@ -100,6 +100,9 @@ class SdkExternalDevice final : public SdkDeviceBase, public IExternalDevice {
     // thread that may be wedged, nothing is allowed to wait on it without a bound (see
     // DeviceThread), and LightingController's watchdog reports the domain as unresponsive
     // so a wedge is visible rather than silent.
+    //
+    // Also used by commit() before calling Reset(), because Reset() calls WaitForReady()
+    // internally for APIv4 -- another path to the same unbounded spin.
     [[nodiscard]] bool waitUntilReady();
 
     static constexpr std::chrono::milliseconds kReadyTimeout{250};

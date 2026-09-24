@@ -78,9 +78,10 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
     setWindowFlag(Qt::Dialog);
 
     auto* tabs = new QTabWidget(this);
-    tabs->addTab(buildKeyboardTab(), tr("Keyboard"));
+    tabs->addTab(buildKeyboardTab(), tr("Keyboard lighting"));
     tabs->addTab(buildExternalTab(), tr("External"));
     tabs->addTab(buildSchemesTab(), tr("Schemes"));
+    tabs->setCurrentIndex(0);
 
     configStatus_ = new QLabel(this);
     keyboardStatus_ = new QLabel(this);

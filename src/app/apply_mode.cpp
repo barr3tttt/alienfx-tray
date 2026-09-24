@@ -266,7 +266,7 @@ ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleL
     // Anything inherited can make the light the user is being asked to look at invisible, and
     // a diagnostic that identifies lights by eye must not be dimmable by unrelated config.
     scheme.external.brightness = Brightness{Brightness::kMax};
-    for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id)
+    for (std::uint8_t id : kDefaultExternalLightIds)
         scheme.external.zones.push_back(
             ExternalZone{id, defaultZoneName(id), uniform(probeColor(id, singleLightId))});
 
