@@ -100,7 +100,7 @@ possibilities, and guessing between them would be worse than admitting the gap:
 2. the ring is segmented across more than one ID,
 3. the lid logo sits within the ring assembly and one fixture was described twice.
 
-`alienfx-tray --probe-external=1` lights a single ID white with everything else off, which
+`alienfx-tray --probe-external=1` lights a single ID white with IDs 0-5 driven black, which
 distinguishes them.
 
 ## Measured latencies

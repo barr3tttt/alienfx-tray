@@ -85,7 +85,7 @@ class SdkExternalDevice final : public SdkDeviceBase, public IExternalDevice {
     bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override;
     bool commit() override;
 
-private:
+   private:
     // AlienFX_SDK::Functions::SetPowerAction reaches WaitForReady(), whose APIv4 branch is
     // `while (!IsDeviceReady()) usleep(20);` - an unbounded spin with no timeout.
     //
