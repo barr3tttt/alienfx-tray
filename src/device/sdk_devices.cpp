@@ -238,7 +238,10 @@ bool SdkExternalDevice::commit() {
         status_ = DomainStatus{DeviceState::Busy, "controller did not become ready"};
         return false;
     }
-    fx->Reset();
+    if (!fx->Reset()) {
+        markError("transaction open refused");
+        return false;
+    }
     if (!fx->UpdateColors()) {
         markError("update refused");
         return false;

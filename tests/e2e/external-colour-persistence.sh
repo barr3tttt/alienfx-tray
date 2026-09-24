@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Reproduction: "I changed the external colour and it flickered then reverted to light blue."
 #
-# Applies a scheme with two distinct external zone colours and checks that every zone was
-# written without error. This test cannot see the lights, so it asserts on what the engine
-# reports: both controllers ready, every zone accepted, and the commit applied.
+# Applies a scheme with two distinct external zone colours and checks, through the
+# ALIENFX_TRAY_TIMING breakdown, that the test scheme was the one loaded (exactly its two
+# zones were written, not the six built-in defaults) and that the external commit ran and
+# succeeded. This test cannot see the lights, so it does not prove the colours persist:
+# that needs a person looking at the laptop, and the script says what to look for.
 #
 # Before the fix in SdkExternalDevice::commit() the commit was a no-op because the SDK's
-# inSet flag was false after SetPowerAction. The engine still reported success, but the
-# controller reverted to its firmware default (light blue) because nothing ever sent a
-# "finish and play" (COMMV4_control type 3) after the power-state writes.
+# inSet flag was false after SetPowerAction, so nothing ever sent a "finish and play"
+# (COMMV4_control type 3) after the power-state writes.
 
 set -uo pipefail
 # shellcheck source=tests/e2e/lib.sh
@@ -36,7 +37,8 @@ if command -v flock >/dev/null 2>&1; then
 fi
 
 # Two zones with unmistakably different colours so a visual check can confirm both survive.
-cat >"$TEST_DIR/config.json" <<'EOF'
+mkdir -p "$TEST_DIR/alienfx-tray"
+cat >"$TEST_DIR/alienfx-tray/config.json" <<'EOF'
 {
   "activeScheme": "Persist test",
   "lightsOn": true,
@@ -64,13 +66,28 @@ EOF
 
 # Apply it.
 note "applying scheme with two distinct external zone colours"
-output="$(XDG_CONFIG_HOME="$TEST_DIR" "$BIN" --apply 2>&1)"
+output="$(XDG_CONFIG_HOME="$TEST_DIR" ALIENFX_TRAY_TIMING=1 "$BIN" --apply 2>&1)"
 status=$?
 [[ -n "$output" ]] && note "$output"
 
-# Both controllers must report ready.  The "External lighting controller ready." line is
-# the only signal the headless apply gives that the zones were painted, so if it is absent
-# the fix did not reach the hardware.
+count_lines() { grep -c -- "$2" <<<"$1"; }
+
+# Exactly the test scheme's zones, then one commit, and nothing reported as refused.
+check_apply() {
+  local label="$1" output="$2" zones
+  zones="$(count_lines "$output" 'external/applyZone')"
+  if [[ "$zones" -ne 2 ]]; then
+    fail "$label: expected 2 external zone writes from the test scheme, saw $zones"
+  elif [[ "$(count_lines "$output" 'external/commit')" -ne 1 ]]; then
+    fail "$label: external commit did not run exactly once"
+  elif [[ "$output" == *"refused"* ]]; then
+    fail "$label: a controller refused a command"
+  else
+    pass "$label: both test zones written and the external commit succeeded"
+  fi
+}
+
+# Both controllers must report ready.
 if [[ "$status" -ne 0 ]]; then
   fail "--apply exited with status $status"
 elif [[ "$output" != *"External lighting controller ready"* ]]; then
@@ -80,15 +97,16 @@ elif [[ "$output" != *"Keyboard controller ready"* ]]; then
 elif [[ "$output" == *"standing down"* ]]; then
   fail "--apply stood down for the device lock"
 else
-  pass "both controllers reported ready with two distinct external zone colours"
+  pass "both controllers reported ready"
 fi
+check_apply "first apply" "$output"
 
-# Apply the same scheme a second time.  If the commit fixed anything, there is no
-# observable difference -- the colours are already on the controller -- but a second
-# apply tests that the controller is still reachable and not wedged.
+# Apply the same scheme a second time. Each --apply is a fresh process with a fresh engine,
+# so every zone is sent again; this checks the controller is still reachable and not
+# wedged after a commit.
 sleep 2
 note "re-applying the same scheme"
-output2="$(XDG_CONFIG_HOME="$TEST_DIR" "$BIN" --apply 2>&1)"
+output2="$(XDG_CONFIG_HOME="$TEST_DIR" ALIENFX_TRAY_TIMING=1 "$BIN" --apply 2>&1)"
 [[ -n "$output2" ]] && note "$output2"
 
 if [[ "$output2" == *"External lighting controller ready"* ]]; then
@@ -96,10 +114,11 @@ if [[ "$output2" == *"External lighting controller ready"* ]]; then
 else
   fail "second apply did not succeed"
 fi
+check_apply "second apply" "$output2"
 
-# A third apply with a single zone changed must also succeed.  This exercises the
-# engine's change-tracking path: only one zone is sent, the other is skipped.
-cat >"$TEST_DIR/config.json" <<'EOF'
+# A third apply with one zone's colour changed. A fresh process sends both zones again,
+# so this checks the new colour is accepted alongside the unchanged one.
+cat >"$TEST_DIR/alienfx-tray/config.json" <<'EOF'
 {
   "activeScheme": "Persist test",
   "lightsOn": true,
@@ -126,13 +145,17 @@ cat >"$TEST_DIR/config.json" <<'EOF'
 EOF
 
 note "changing one zone colour"
-output3="$(XDG_CONFIG_HOME="$TEST_DIR" "$BIN" --apply 2>&1)"
+output3="$(XDG_CONFIG_HOME="$TEST_DIR" ALIENFX_TRAY_TIMING=1 "$BIN" --apply 2>&1)"
 [[ -n "$output3" ]] && note "$output3"
 
 if [[ "$output3" == *"External lighting controller ready"* ]]; then
-  pass "partial zone change applied without reverting the unchanged zone"
+  pass "changed scheme applied"
 else
-  fail "partial zone change did not succeed"
+  fail "changed scheme did not apply"
 fi
+check_apply "changed scheme" "$output3"
+
+note "not verified by this script: look at the laptop now. Light ID 1 should stay blue and"
+note "ID 2 green, and neither should fall back to the firmware light blue after a few seconds."
 
 summary "external-colour-persistence"

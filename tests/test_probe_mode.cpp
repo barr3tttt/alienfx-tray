@@ -72,6 +72,15 @@ class TestProbeMode : public QObject {
                      id == 3 ? (Rgb{255, 255, 255}) : (Rgb{0, 0, 0}));
     }
 
+    void aSingleIdOutsideTheDefaultsIsStillSentLit() {
+        const Scheme painted = buildProbeOutput(awkwardConfig(), 10).scheme();
+
+        QVERIFY(zone(painted, 10));
+        QCOMPARE(zone(painted, 10)->color.ac, (Rgb{255, 255, 255}));
+        for (std::uint8_t id : kDefaultExternalLightIds)
+            QCOMPARE(zone(painted, id)->color.ac, (Rgb{0, 0, 0}));
+    }
+
     // The deliberate exception. Repainting the keyboard while the user is staring at the
     // external lights changes the thing they are being asked to describe.
     void theKeyboardIsInheritedFromTheActiveScheme() {
