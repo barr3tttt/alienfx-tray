@@ -84,8 +84,9 @@ alienfx-tray --probe-external=N identify one external light on its own
 
 `--probe-external` exists because the external light IDs carry no self-description. The
 only way to learn which ID drives which fixture is to light one and look, so the probe
-lights IDs 0-5 in six distinct colours - blacking out the rest - and you write down what you
-see. Pass a single ID to light that one white on its own when a shared colour is ambiguous.
+lights IDs 0-5 in six distinct colours and you write down what you see. IDs 6-22 are not
+sent, so they keep whatever they were already showing. Pass a single ID (0-22) to light that
+one white with IDs 0-5 driven black, when a shared colour is ambiguous.
 
 ## Applying at login and after resume
 

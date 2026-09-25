@@ -196,7 +196,8 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
 
     if (singleLightId) {
         out << "\nExternal light ID " << *singleLightId
-            << " is lit white. Every other external light is off.\n\n"
+            << " is lit white. IDs 0-5 are driven black; any other ID keeps whatever it "
+               "was\nalready showing.\n\n"
                "Look at the laptop and note exactly which fixture is lit - and whether it is\n"
                "the whole of that fixture or only part of it.\n\n";
     } else {
@@ -204,7 +205,7 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                "which\nphysical zone shows which colour:\n\n";
         for (const auto& entry : kProbeColors)
             out << "  ID " << static_cast<int>(entry.id) << "  " << entry.name << "\n";
-        out << "  IDs 6-22  off\n\n"
+        out << "  IDs 6-22  not sent, so they keep whatever they were already showing\n\n"
                "If two zones report the same colour, or one zone reports two colours, rerun\n"
                "with a single ID to remove the ambiguity:  --probe-external=1\n\n";
     }
@@ -266,9 +267,15 @@ ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleL
     // Anything inherited can make the light the user is being asked to look at invisible, and
     // a diagnostic that identifies lights by eye must not be dimmable by unrelated config.
     scheme.external.brightness = Brightness{Brightness::kMax};
-    for (std::uint8_t id = 0; id < kExternalLightIdCount; ++id)
+    for (std::uint8_t id : kDefaultExternalLightIds)
         scheme.external.zones.push_back(
             ExternalZone{id, defaultZoneName(id), uniform(probeColor(id, singleLightId))});
+    if (singleLightId && !std::ranges::contains(kDefaultExternalLightIds,
+                                                static_cast<std::uint8_t>(*singleLightId))) {
+        const auto id = static_cast<std::uint8_t>(*singleLightId);
+        scheme.external.zones.push_back(
+            ExternalZone{id, defaultZoneName(id), uniform(probeColor(id, singleLightId))});
+    }
 
     return resolveOutput(LightingState{std::move(scheme), config.lightsOn});
 }

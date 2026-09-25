@@ -234,6 +234,17 @@ bool SdkExternalDevice::commit() {
         markError("device not open");
         return false;
     }
+    if (!waitUntilReady()) {
+        status_ = DomainStatus{DeviceState::Busy, "controller did not become ready"};
+        return false;
+    }
+    // SetPowerAction leaves the SDK's inSet flag false, and UpdateColors() silently does
+    // nothing without it. Reset() opens the transaction so UpdateColors() actually sends
+    // the APIv4 finish-and-play.
+    if (!fx->Reset()) {
+        markError("transaction open refused");
+        return false;
+    }
     if (!fx->UpdateColors()) {
         markError("update refused");
         return false;
