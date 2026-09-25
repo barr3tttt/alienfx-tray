@@ -85,7 +85,7 @@ inline constexpr std::uint8_t kDefaultExternalLightIds[] = {0, 1, 2, 3, 4, 5};
 // is recorded observation, not a lookup table from a datasheet.
 enum class ZoneConfidence : std::uint8_t {
     Confirmed,     // observed directly, one colour, unambiguously reported
-    Provisional,   // observed, but the report was ambiguous - see docs/hardware-notes.md
+    Provisional,   // observed, but the report was ambiguous
     Unidentified,  // lit during a probe and nothing was reported as changing
 };
 
@@ -95,12 +95,8 @@ struct ZoneProfile {
     ZoneConfidence confidence;
 };
 
-// Established by lighting each ID a distinct colour on an Alienware m15 R7 AMD and asking
-// the owner what changed.  Confirmed with the fixes that made colours hold.
-//
-// Rear ring: IDs 0 and 1 both drive the ring.  Before the colour-persistence fix a
-// mono-colour probe of ID 0 appeared to do nothing because the colour washed out; once
-// colours held, the owner confirmed both IDs light the same fixture.
+// Established by lighting each ID on an Alienware m15 R7 AMD and asking the owner what
+// changed. The observations behind each entry are in docs/hardware-notes.md.
 inline constexpr ZoneProfile kExternalZoneProfiles[] = {
     {0, "Rear ring (zone 0)", ZoneConfidence::Confirmed},
     {1, "Rear ring (zone 1)", ZoneConfidence::Confirmed},
