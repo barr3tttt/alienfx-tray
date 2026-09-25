@@ -96,20 +96,18 @@ struct ZoneProfile {
 };
 
 // Established by lighting each ID a distinct colour on an Alienware m15 R7 AMD and asking
-// the owner what changed.
+// the owner what changed.  Confirmed with the fixes that made colours hold.
 //
-// ext-01 is deliberately marked provisional. The report was "outside main light (ring) is
-// green and yellow" - green being ext-01 and yellow ext-03 - while ext-03 was separately
-// called the outside logo. That is not enough to say whether the ring and the lid logo share
-// an ID, whether the ring has segments on two IDs, or whether one fixture was described two
-// ways. A narrower probe settles it: `alienfx-tray --probe-external=1`, one ID at a time.
+// Rear ring: IDs 0 and 1 both drive the ring.  Before the colour-persistence fix a
+// mono-colour probe of ID 0 appeared to do nothing because the colour washed out; once
+// colours held, the owner confirmed both IDs light the same fixture.
 inline constexpr ZoneProfile kExternalZoneProfiles[] = {
-    {0, "Unidentified (ID 0)", ZoneConfidence::Unidentified},
-    {1, "Rear ring", ZoneConfidence::Provisional},
+    {0, "Rear ring (zone 0)", ZoneConfidence::Confirmed},
+    {1, "Rear ring (zone 1)", ZoneConfidence::Confirmed},
     {2, "Interior logo", ZoneConfidence::Confirmed},
     {3, "Lid logo", ZoneConfidence::Confirmed},
-    {4, "Unidentified (ID 4)", ZoneConfidence::Unidentified},
-    {5, "Unidentified (ID 5)", ZoneConfidence::Unidentified},
+    {4, "No visible light (zone 4)", ZoneConfidence::Confirmed},
+    {5, "No visible light (zone 5)", ZoneConfidence::Confirmed},
 };
 
 [[nodiscard]] const ZoneProfile* findZoneProfile(std::uint8_t lightId);

@@ -83,25 +83,21 @@ Observed on an m15 R7 AMD:
 
 | ID | Fixture | Confidence |
 |---|---|---|
-| 0 | nothing observed | lit during a probe, nothing reported |
-| 1 | rear ring | **provisional** - see below |
+| 0 | rear ring (zone 0) | confirmed |
+| 1 | rear ring (zone 1) | confirmed |
 | 2 | interior logo | confirmed |
 | 3 | lid logo | confirmed |
-| 4 | nothing observed | lit during a probe, nothing reported |
-| 5 | nothing observed | lit during a probe, nothing reported |
+| 4 | no visible light | confirmed |
+| 5 | no visible light | confirmed |
 | 6-22 | nothing | accept commands, do nothing |
 
-ID 1 is marked provisional deliberately. In the probe that identified 2 and 3, the rear
-ring was reported as showing *both* the colour assigned to ID 1 and the colour assigned to
-ID 3, while ID 3 was separately identified as the lid logo. That leaves three
-possibilities, and guessing between them would be worse than admitting the gap:
+The rear ring is driven by two light IDs, 0 and 1.  Before the colour-persistence
+fix a mono-colour probe of ID 0 appeared to do nothing because the colour washed
+out; once colours held, lighting either ID white produced a visible white ring.
+The two IDs carry distinct colours so the ring can show two at once.
 
-1. the ring and the lid logo are driven by the same ID,
-2. the ring is segmented across more than one ID,
-3. the lid logo sits within the ring assembly and one fixture was described twice.
-
-`alienfx-tray --probe-external=1` lights a single ID white with IDs 0-5 driven black, which
-distinguishes them.
+IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
+0x5b--0x60 loop, but they produce no visible light on this chassis.
 
 ## Measured latencies
 
