@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <set>
 #include <system_error>
 #include <utility>
 
@@ -207,6 +208,93 @@ Config Config::defaults() {
     return config;
 }
 
+namespace {
+
+bool isOldDefaultName(const std::string& name) {
+    constexpr const char* olds[] = {
+        "Rear ring (zone 0)", "Rear ring (zone 1)",
+        "No visible light (zone 4)", "No visible light (zone 5)",
+    };
+    return std::ranges::find(olds, name) != std::end(olds);
+}
+
+}  // namespace
+
+bool migrateConfig(Config& config) {
+    const std::size_t schemeCountBefore = config.schemes.size();
+    bool modified = false;
+
+    for (Scheme& scheme : config.schemes) {
+        auto& zones = scheme.external.zones;
+
+        // Step 1: remove zones 4 and 5, which light nothing visible.
+        const auto before = zones.size();
+        std::erase_if(zones, [](const ExternalZone& z) {
+            return z.lightId == 4 || z.lightId == 5;
+        });
+        if (zones.size() != before) modified = true;
+
+        // Step 2: collapse zones 0 and 1 into a single Rear ring entry.
+        const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
+            for (ExternalZone& z : zones)
+                if (z.lightId == id) return &z;
+            return nullptr;
+        };
+
+        ExternalZone* zone0 = findZone(0);
+        ExternalZone* zone1 = findZone(1);
+
+        if (zone1) {
+            if (zone0) {
+                // Both exist: zone 0's data wins.
+                std::erase_if(zones, [](const ExternalZone& z) { return z.lightId == 1; });
+            } else {
+                // Only zone 1 exists: reparent it to lightId 0.
+                zone1->lightId = 0;
+            }
+            modified = true;
+        }
+
+        // Step 3: rename zones whose names match an old default to the current default.
+        for (ExternalZone& zone : zones) {
+            if (isOldDefaultName(zone.name)) {
+                zone.name = defaultZoneName(zone.lightId);
+                modified = true;
+            }
+        }
+
+        // Step 4: de-duplicate by lightId, keeping the first occurrence.
+        std::set<std::uint8_t> seen;
+        const auto dedupBefore = zones.size();
+        std::erase_if(zones, [&seen](const ExternalZone& z) {
+            return !seen.insert(z.lightId).second;
+        });
+        if (zones.size() != dedupBefore) modified = true;
+    }
+
+    if (modified) {
+        // Restore builtins so any built-in scheme also gets the new zone layout.
+        // But we must not duplicate schemes - keep existing migrated ones.
+        std::set<std::string> existingNames;
+        for (const Scheme& s : config.schemes) existingNames.insert(s.name);
+        for (const Scheme& builtin : builtinSchemes()) {
+            if (existingNames.contains(builtin.name)) continue;
+            config.schemes.push_back(builtin);
+        }
+        // restoreMissingBuiltins re-seeds builtins, but we've already done it above.
+    }
+
+    return modified;
+}
+
+bool backupConfigFile(const std::filesystem::path& source) {
+    const auto dest = source.string() + ".bak";
+    std::error_code ec;
+    std::filesystem::copy_file(source, dest, std::filesystem::copy_options::overwrite_existing,
+                               ec);
+    return !ec;
+}
+
 std::filesystem::path configDir() {
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg)
         return std::filesystem::path(xdg) / "alienfx-tray";
@@ -291,9 +379,17 @@ LoadResult loadConfig(const std::filesystem::path& path) {
         return result;
     }
     result.config = std::move(parsed);
+
+    const bool migrated = migrateConfig(result.config);
+
     // Built-ins are re-seeded rather than merged, so editing one in place can never destroy
     // it for good. Deleting one is a different intent and is recorded, so it stays deleted.
     result.config.restoreMissingBuiltins();
+
+    if (migrated) {
+        backupConfigFile(path);
+    }
+
     return result;
 }
 

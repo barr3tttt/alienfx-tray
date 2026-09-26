@@ -68,8 +68,9 @@ struct RunOutcome {
     ApplyResult result{};
 };
 
-// Six unmistakable, well-separated colours for the IDs known to drive visible lights, and
-// black everywhere else so anything that does light up stands out.
+// Four unmistakable, well-separated colours for the hardware IDs known to drive visible
+// lights. IDs 0 and 1 both drive the rear ring; each gets its own colour so the probe makes
+// the double-drive visible. IDs 4 and 5 are not probed - they light nothing.
 constexpr struct {
     std::uint8_t id;
     Rgb color;
@@ -77,7 +78,6 @@ constexpr struct {
 } kProbeColors[] = {
     {0, Rgb{255, 0, 0}, "red"},        {1, Rgb{0, 255, 0}, "green"},
     {2, Rgb{0, 0, 255}, "blue"},       {3, Rgb{255, 255, 0}, "yellow"},
-    {4, Rgb{255, 0, 255}, "magenta"},  {5, Rgb{0, 255, 255}, "cyan"},
 };
 
 // A domain is worth another attempt only while its failure is one that plausibly clears on
@@ -196,7 +196,7 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
 
     if (singleLightId) {
         out << "\nExternal light ID " << *singleLightId
-            << " is lit white. IDs 0-5 are driven black; any other ID keeps whatever it "
+            << " is lit white. IDs 0-3 are driven black; any other ID keeps whatever it "
                "was\nalready showing.\n\n"
                "Look at the laptop and note exactly which fixture is lit - and whether it is\n"
                "the whole of that fixture or only part of it.\n\n";
@@ -205,7 +205,9 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
                "which\nphysical zone shows which colour:\n\n";
         for (const auto& entry : kProbeColors)
             out << "  ID " << static_cast<int>(entry.id) << "  " << entry.name << "\n";
-        out << "  IDs 6-22  not sent, so they keep whatever they were already showing\n\n"
+        out << "\nIDs 0 and 1 both drive the rear ring - you should see two colours on the "
+               "ring.\n"
+               "IDs 4 and up  not sent, so they keep whatever they were already showing\n\n"
                "If two zones report the same colour, or one zone reports two colours, rerun\n"
                "with a single ID to remove the ambiguity:  --probe-external=1\n\n";
     }
@@ -267,10 +269,10 @@ ResolvedScheme buildProbeOutput(const Config& config, std::optional<int> singleL
     // Anything inherited can make the light the user is being asked to look at invisible, and
     // a diagnostic that identifies lights by eye must not be dimmable by unrelated config.
     scheme.external.brightness = Brightness{Brightness::kMax};
-    for (std::uint8_t id : kDefaultExternalLightIds)
+    for (std::uint8_t id : kVisibleHardwareIds)
         scheme.external.zones.push_back(
             ExternalZone{id, defaultZoneName(id), uniform(probeColor(id, singleLightId))});
-    if (singleLightId && !std::ranges::contains(kDefaultExternalLightIds,
+    if (singleLightId && !std::ranges::contains(kVisibleHardwareIds,
                                                 static_cast<std::uint8_t>(*singleLightId))) {
         const auto id = static_cast<std::uint8_t>(*singleLightId);
         scheme.external.zones.push_back(

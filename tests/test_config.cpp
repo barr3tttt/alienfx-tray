@@ -343,6 +343,138 @@ class TestConfig : public QObject {
         QVERIFY(!parseHex("#gggggg", parsed));
         QVERIFY(!parseHex("", parsed));
     }
+
+    // --- migration tests ---
+
+    // A config with separate zone 0 and 1 entries collapses them into one Rear ring.
+    void migrationCollapsesDuplicateRingZones() {
+        Config config;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(
+            ExternalZone{0, "Rear ring (zone 0)", uniform(Rgb{10, 20, 30})});
+        s.external.zones.push_back(
+            ExternalZone{1, "Rear ring (zone 1)", uniform(Rgb{40, 50, 60})});
+        s.external.zones.push_back(ExternalZone{2, "Interior logo", uniform(Rgb{0, 0, 255})});
+        s.external.zones.push_back(ExternalZone{3, "Lid logo", uniform(Rgb{255, 255, 0})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+
+        const ExternalSettings& ext = config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(3));
+        // Zone 0's colour wins.
+        QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring"));
+        QCOMPARE(ext.zones[0].color.ac, (Rgb{10, 20, 30}));
+        QCOMPARE(ext.zones[1].lightId, std::uint8_t(2));
+        QCOMPARE(ext.zones[2].lightId, std::uint8_t(3));
+    }
+
+    // Zones 4 and 5 light nothing visible: migration removes them.
+    void migrationRemovesInvisibleZones() {
+        Config config;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(
+            ExternalZone{0, "Rear ring (zone 0)", uniform(Rgb{128, 0, 0})});
+        s.external.zones.push_back(
+            ExternalZone{1, "Rear ring (zone 1)", uniform(Rgb{0, 128, 0})});
+        s.external.zones.push_back(ExternalZone{2, "Interior logo", uniform(Rgb{0, 0, 255})});
+        s.external.zones.push_back(ExternalZone{3, "Lid logo", uniform(Rgb{255, 255, 0})});
+        s.external.zones.push_back(
+            ExternalZone{4, "No visible light (zone 4)", uniform(Rgb{128, 64, 0})});
+        s.external.zones.push_back(
+            ExternalZone{5, "No visible light (zone 5)", uniform(Rgb{64, 128, 0})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+
+        const ExternalSettings& ext = config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(3));
+        for (const ExternalZone& z : ext.zones) {
+            QVERIFY2(z.lightId != 4 && z.lightId != 5, "zones 4 and 5 must be removed");
+        }
+    }
+
+    // Old default names are replaced with current names. Custom names survive.
+    void migrationRenamesOldDefaultsButNotCustomNames() {
+        Config config;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(
+            ExternalZone{0, "Rear ring (zone 0)", uniform(Rgb{1, 1, 1})});
+        s.external.zones.push_back(
+            ExternalZone{1, "Rear ring (zone 1)", uniform(Rgb{2, 2, 2})});
+        s.external.zones.push_back(ExternalZone{2, "The glowy thing", uniform(Rgb{3, 3, 3})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+
+        const ExternalSettings& ext = config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(2));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring"));
+        QCOMPARE(ext.zones[1].name, std::string("The glowy thing"));
+    }
+
+    // Running migration twice is safe - the second pass makes no changes.
+    void migrationIsIdempotent() {
+        Config config;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(
+            ExternalZone{0, "Rear ring (zone 0)", uniform(Rgb{10, 20, 30})});
+        s.external.zones.push_back(
+            ExternalZone{1, "Rear ring (zone 1)", uniform(Rgb{40, 50, 60})});
+        s.external.zones.push_back(ExternalZone{4, "should go away", uniform(Rgb{0, 0, 0})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+        QVERIFY(!migrateConfig(config));
+
+        const ExternalSettings& ext = config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(1));
+        QCOMPARE(ext.zones.front().name, std::string("Rear ring"));
+    }
+
+    void migrationCreatesConfigBackup() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        // Write a config with the old 6-zone layout.
+        const std::string oldText = R"CONF({
+          "schemaVersion": 1,
+          "activeScheme": "x",
+          "schemes": [{"name": "x",
+                       "keyboard": {"color": "#010203"},
+                       "external": {"zones": [
+                         {"id": 0, "name": "Rear ring (zone 0)", "color": "#ff0000"},
+                         {"id": 1, "name": "Rear ring (zone 1)", "color": "#00ff00"}
+                       ]}}]
+        })CONF";
+        writeAll(path, oldText);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+        QVERIFY(result.fileExisted);
+
+        // The migrated config should have a single Rear ring entry.
+        const ExternalSettings& ext = result.config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(1));
+        QCOMPARE(ext.zones.front().lightId, std::uint8_t(0));
+
+        // A backup of the original config should exist.
+        const auto backupPath = path.string() + ".bak";
+        QVERIFY2(std::filesystem::exists(backupPath),
+                 "backup file must be created on first migrating load");
+        QCOMPARE(readAll(backupPath), oldText);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestConfig)

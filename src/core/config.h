@@ -47,6 +47,13 @@ struct Config {
     [[nodiscard]] static Config defaults();
 };
 
+// Migrates a config written by an older version to the current zone layout.
+// Returns true if the config was modified.
+[[nodiscard]] bool migrateConfig(Config& config);
+
+// Copy the source file to source with ".bak" appended. Returns true if the copy succeeded.
+bool backupConfigFile(const std::filesystem::path& source);
+
 // $XDG_CONFIG_HOME/alienfx-tray, falling back to ~/.config/alienfx-tray.
 [[nodiscard]] std::filesystem::path configDir();
 [[nodiscard]] std::filesystem::path configPath();

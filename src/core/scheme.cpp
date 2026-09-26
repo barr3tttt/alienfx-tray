@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdio>
+#include <set>
 
 namespace alienfx {
 
@@ -31,6 +32,19 @@ std::string defaultZoneName(std::uint8_t lightId) {
     std::array<char, 16> buf{};
     std::snprintf(buf.data(), buf.size(), "ext-%02u", static_cast<unsigned>(lightId));
     return std::string(buf.data());
+}
+
+std::vector<std::uint8_t> zoneHardwareIds(const ExternalZone& zone) {
+    if (zone.lightId == 0) return {0, 1};
+    return {zone.lightId};
+}
+
+std::vector<std::uint8_t> collectHardwareIds(const ExternalSettings& settings) {
+    std::set<std::uint8_t> ids;
+    for (const ExternalZone& zone : settings.zones) {
+        for (std::uint8_t id : zoneHardwareIds(zone)) ids.insert(id);
+    }
+    return std::vector<std::uint8_t>(ids.begin(), ids.end());
 }
 
 ExternalSettings defaultExternalSettings(Rgb color) {

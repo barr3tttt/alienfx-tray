@@ -59,8 +59,9 @@ class TestLightingEngine : public QObject {
 
         QCOMPARE(externalView->brightnessCalls.size(), std::size_t(1));
         const auto& ids = externalView->brightnessCalls.front().lightIds;
-        QCOMPARE(ids.size(), std::size(kDefaultExternalLightIds));
-        for (std::size_t i = 0; i < ids.size(); ++i) QCOMPARE(ids[i], kDefaultExternalLightIds[i]);
+        const std::vector<std::uint8_t> expected = collectHardwareIds(defaultScheme().external);
+        QCOMPARE(ids.size(), expected.size());
+        for (std::size_t i = 0; i < ids.size(); ++i) QCOMPARE(ids[i], expected[i]);
 
         QCOMPARE(externalView->commitCount, 1);
     }
@@ -218,7 +219,7 @@ class TestLightingEngine : public QObject {
         LightingEngine engine(std::move(keyboard), std::move(external));
         engine.apply(lit(scheme));
         const std::size_t firstPass = externalView->zoneCalls.size();
-        QCOMPARE(firstPass, scheme.external.zones.size());
+        QCOMPARE(firstPass, collectHardwareIds(scheme.external).size());
 
         // Nothing changed: nothing goes on the wire.
         engine.apply(lit(scheme));
@@ -226,7 +227,8 @@ class TestLightingEngine : public QObject {
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(1));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
 
-        // One zone changed: exactly one zone goes on the wire.
+        // One zone changed: exactly one hardware ID goes on the wire (Lid logo is a single
+        // hardware ID, unlike the Rear ring which expands to two).
         scheme.external.zones[2].color = uniform(Rgb{7, 7, 7});
         engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass + 1);
@@ -299,7 +301,8 @@ class TestLightingEngine : public QObject {
 
         externalView->failZone = false;
         engine.apply(lit(scheme));
-        QCOMPARE(externalView->zoneCalls.size(), 1 + scheme.external.zones.size());
+        QCOMPARE(externalView->zoneCalls.size(),
+                 1 + collectHardwareIds(scheme.external).size());
     }
 
     // A renamed zone is the same light. Renaming must not cost a USB round trip.
@@ -336,7 +339,7 @@ class TestLightingEngine : public QObject {
         engine.apply(lit(scheme));
         QCOMPARE(externalView->brightnessCalls.size(), std::size_t(2));
         QCOMPARE(externalView->brightnessCalls.back().lightIds.size(),
-                 scheme.external.zones.size());
+                 collectHardwareIds(scheme.external).size());
     }
 
     void missingBackendsDegradeInsteadOfCrashing() {
@@ -347,6 +350,38 @@ class TestLightingEngine : public QObject {
         QCOMPARE(asInt(result.external.state), asInt(DeviceState::Missing));
         QVERIFY(!engine.anyDeviceOpen());
         engine.releaseDevices();  // must not crash
+    }
+
+    // The rear ring is driven by two hardware IDs (0 and 1) that the UI shows as one zone.
+    // Setting the Rear ring colour must send to both.
+    void rearRingDrivesBothHardwareIds() {
+        Scheme scheme;
+        scheme.name = "test";
+        scheme.external.zones.push_back(
+            ExternalZone{0, "Rear ring", uniform(Rgb{255, 128, 0})});
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(scheme));
+
+        QCOMPARE(externalView->zoneCalls.size(), std::size_t(2));
+        QCOMPARE(externalView->zoneCalls[0].lightId, std::uint8_t(0));
+        QCOMPARE(externalView->zoneCalls[0].acColor, (Rgb{255, 128, 0}));
+        QCOMPARE(externalView->zoneCalls[1].lightId, std::uint8_t(1));
+        QCOMPARE(externalView->zoneCalls[1].acColor, (Rgb{255, 128, 0}));
+    }
+
+    // Zones 4 and 5 are not in the default scheme because they light nothing.
+    void defaultSchemeHasNoInvisibleZones() {
+        const Scheme scheme = defaultScheme();
+        for (const ExternalZone& zone : scheme.external.zones) {
+            QVERIFY2(zone.lightId != 4 && zone.lightId != 5,
+                     "zones 4 and 5 must not appear in the default scheme");
+        }
+        QCOMPARE(scheme.external.zones.size(), std::size_t(3));
     }
 };
 

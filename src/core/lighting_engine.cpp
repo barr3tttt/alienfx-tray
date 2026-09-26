@@ -98,9 +98,7 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     // be resent whenever the set of lights changes, not only when the level does.
     if (!applied || applied->brightness != settings.brightness ||
         !sameLightIds(*applied, settings)) {
-        std::vector<std::uint8_t> lightIds;
-        lightIds.reserve(settings.zones.size());
-        for (const ExternalZone& zone : settings.zones) lightIds.push_back(zone.lightId);
+        std::vector<std::uint8_t> lightIds = collectHardwareIds(settings);
 
         if (!external_->setBrightness(settings.brightness, lightIds)) {
             appliedExternal_.reset();
@@ -113,9 +111,11 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
         const ExternalZone* previous = applied ? findZone(*applied, zone.lightId) : nullptr;
         if (previous && previous->color == zone.color) continue;
 
-        if (!external_->applyZone(zone.lightId, zone.color.ac, zone.color.effectiveBattery())) {
-            appliedExternal_.reset();
-            return external_->status();
+        for (std::uint8_t hwId : zoneHardwareIds(zone)) {
+            if (!external_->applyZone(hwId, zone.color.ac, zone.color.effectiveBattery())) {
+                appliedExternal_.reset();
+                return external_->status();
+            }
         }
         sentAnything = true;
     }
