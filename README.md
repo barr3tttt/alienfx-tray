@@ -84,9 +84,11 @@ alienfx-tray --probe-external=N identify one external light on its own
 
 `--probe-external` exists because the external light IDs carry no self-description. The
 only way to learn which ID drives which fixture is to light one and look, so the probe
-lights IDs 0-5 in six distinct colours and you write down what you see. IDs 6-22 are not
+lights IDs 0-3 in four distinct colours and you write down what you see. IDs 4-22 are not
 sent, so they keep whatever they were already showing. Pass a single ID (0-22) to light that
-one white with IDs 0-5 driven black, when a shared colour is ambiguous.
+one white with IDs 0-3 driven black, when a shared colour is ambiguous. The probe addresses
+raw hardware IDs, so the rear ring shows up as two IDs (0 and 1) even though the Zones list
+shows it as one entry.
 
 ## Applying at login and after resume
 
@@ -161,6 +163,8 @@ not run. Neither controller reachable also exits 1.
 
 `~/.config/alienfx-tray/config.json`, written atomically and safe to hand-edit. An
 unparseable file falls back to the built-in defaults rather than leaving you in the dark.
+A file written by an older version is upgraded to the current zone layout the first time it
+is loaded, and the original is kept alongside it as `config.json.bak`.
 
 Nothing is ever written to the controllers' own memory, so a reboot always restores the
 firmware default. That is deliberate: it means no scheme you try can strand the machine.

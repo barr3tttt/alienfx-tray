@@ -28,6 +28,7 @@ reason to reboot into Windows.
 - **Domain** - one of the two independent lighting controllers. `Keyboard` or `External`.
   They share no command vocabulary and fail independently.
 - **Zone** - one addressable light on the external controller, identified by its light ID.
+  The rear ring is one zone (ID 0) that drives hardware IDs 0 and 1.
 - **Scheme** - a named set of colours and brightnesses covering both domains.
 
 ## Runtime conventions

@@ -78,8 +78,8 @@ struct Scheme {
 // result, so we leave them alone entirely - the hardware does not need them to produce the
 // visible three zones.
 //
-// IDs 0 and 1 both drive the rear ring, so the UI shows ONE "Rear ring" entry. The device
-// layer sends every colour to both IDs together. 6-22 remain reachable through the config
+// IDs 0 and 1 both drive the rear ring, so the UI shows ONE "Rear ring" entry. The lighting
+// engine sends every colour to both IDs together. 6-22 remain reachable through the config
 // file for anyone probing a different chassis.
 inline constexpr std::uint8_t kExternalLightIdCount = 23;
 inline constexpr std::uint8_t kDefaultExternalLightIds[] = {0, 2, 3};
