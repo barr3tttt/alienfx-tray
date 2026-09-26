@@ -93,10 +93,9 @@ A reboot restores firmware defaults, which is what makes this hardware safe to e
 with. This application never issues the SDK's save-to-device commands at all - login and
 resume repaint anyway, so persistence would buy nothing and cost the safety net.
 
-Config files are upgraded to the current zone layout on first load: zones 4 and 5 (no
-visible light) are dropped, hardware IDs 0 and 1 are collapsed into one Rear ring entry,
-and the original is kept as `config.json.bak`. `src/core/config.cpp:227-271` (`migrateConfig`)
-and `tests/test_config.cpp` have the detail.
+Older config files are migrated to the current zone layout once on load, keeping the
+original as `config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in
+`src/core/config.cpp`.
 
 ## Lessons (append-only)
 - 2026-09-13: hidapi's libusb backend never re-attaches the kernel driver. Its
