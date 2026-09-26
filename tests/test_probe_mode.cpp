@@ -54,20 +54,18 @@ class TestProbeMode : public QObject {
     void everyExternalIdIsPaintedWithTheProbesOwnColours() {
         const Scheme painted = buildProbeOutput(awkwardConfig(), std::nullopt).scheme();
 
-        QCOMPARE(painted.external.zones.size(), std::size(kDefaultExternalLightIds));
+        QCOMPARE(painted.external.zones.size(), std::size(kVisibleHardwareIds));
         QCOMPARE(zone(painted, 0)->color.ac, (Rgb{255, 0, 0}));
         QCOMPARE(zone(painted, 1)->color.ac, (Rgb{0, 255, 0}));
         QCOMPARE(zone(painted, 2)->color.ac, (Rgb{0, 0, 255}));
         QCOMPARE(zone(painted, 3)->color.ac, (Rgb{255, 255, 0}));
-        QCOMPARE(zone(painted, 4)->color.ac, (Rgb{255, 0, 255}));
-        QCOMPARE(zone(painted, 5)->color.ac, (Rgb{0, 255, 255}));
     }
 
     void aSingleIdProbeLightsOnlyThatId() {
         const Scheme painted = buildProbeOutput(awkwardConfig(), 3).scheme();
 
         QCOMPARE(painted.external.brightness.value(), Brightness::kMax);
-        for (std::uint8_t id : kDefaultExternalLightIds)
+        for (std::uint8_t id : kVisibleHardwareIds)
             QCOMPARE(zone(painted, id)->color.ac,
                      id == 3 ? (Rgb{255, 255, 255}) : (Rgb{0, 0, 0}));
     }
@@ -77,7 +75,7 @@ class TestProbeMode : public QObject {
 
         QVERIFY(zone(painted, 10));
         QCOMPARE(zone(painted, 10)->color.ac, (Rgb{255, 255, 255}));
-        for (std::uint8_t id : kDefaultExternalLightIds)
+        for (std::uint8_t id : kVisibleHardwareIds)
             QCOMPARE(zone(painted, id)->color.ac, (Rgb{0, 0, 0}));
     }
 
@@ -95,7 +93,7 @@ class TestProbeMode : public QObject {
 
         const Scheme painted = buildProbeOutput(config, 3).scheme();
         QCOMPARE(painted.keyboard.color, (Rgb{0, 0, 0}));
-        for (std::uint8_t id : kDefaultExternalLightIds)
+        for (std::uint8_t id : kVisibleHardwareIds)
             QCOMPARE(zone(painted, id)->color.ac, (Rgb{0, 0, 0}));
     }
 };

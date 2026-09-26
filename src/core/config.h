@@ -15,8 +15,11 @@ namespace alienfx {
 // persistence in firmware buys nothing and costs the property that makes this hardware safe
 // to experiment with at all - that a reboot always restores the factory default.
 struct Config {
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
+    // The version the data was written in. Anything below kSchemaVersion still needs
+    // migrateConfig before it matches the current zone layout.
+    int schemaVersion = kSchemaVersion;
     std::vector<Scheme> schemes;
     std::string activeSchemeName;
     bool lightsOn = true;
@@ -46,6 +49,13 @@ struct Config {
 
     [[nodiscard]] static Config defaults();
 };
+
+// Migrates a config written by an older schema to the current zone layout and stamps it with
+// the current version, so it runs once per file. Returns true if the config was upgraded.
+[[nodiscard]] bool migrateConfig(Config& config);
+
+// Writes contents to source with ".bak" appended. Returns true if the write succeeded.
+bool backupConfigFile(const std::filesystem::path& source, const std::string& contents);
 
 // $XDG_CONFIG_HOME/alienfx-tray, falling back to ~/.config/alienfx-tray.
 [[nodiscard]] std::filesystem::path configDir();

@@ -3,7 +3,7 @@
 #
 # Applies a scheme with two distinct external zone colours and checks, through the
 # ALIENFX_TRAY_TIMING breakdown, that the test scheme was the one loaded (exactly its two
-# zones were written, not the six built-in defaults) and that the external commit ran and
+# zones were written, not the built-in defaults) and that the external commit ran and
 # succeeded. This test cannot see the lights, so it does not prove the colours persist:
 # that needs a person looking at the laptop, and the script says what to look for.
 #
@@ -43,14 +43,14 @@ cat >"$TEST_DIR/alienfx-tray/config.json" <<'EOF'
   "activeScheme": "Persist test",
   "lightsOn": true,
   "removedBuiltins": [],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "schemes": [
     {
       "external": {
         "brightness": 100,
         "zones": [
-          { "color": "#ff0000", "id": 1, "name": "Ring (test red)" },
-          { "color": "#00ff00", "id": 2, "name": "Interior (test green)" }
+          { "color": "#ff0000", "id": 2, "name": "Interior (test red)" },
+          { "color": "#00ff00", "id": 3, "name": "Lid (test green)" }
         ]
       },
       "keyboard": {
@@ -123,14 +123,14 @@ cat >"$TEST_DIR/alienfx-tray/config.json" <<'EOF'
   "activeScheme": "Persist test",
   "lightsOn": true,
   "removedBuiltins": [],
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "schemes": [
     {
       "external": {
         "brightness": 100,
         "zones": [
-          { "color": "#0000ff", "id": 1, "name": "Ring (test blue)" },
-          { "color": "#00ff00", "id": 2, "name": "Interior (test green)" }
+          { "color": "#0000ff", "id": 2, "name": "Interior (test blue)" },
+          { "color": "#00ff00", "id": 3, "name": "Lid (test green)" }
         ]
       },
       "keyboard": {
@@ -155,7 +155,8 @@ else
 fi
 check_apply "changed scheme" "$output3"
 
-note "not verified by this script: look at the laptop now. Light ID 1 should stay blue and"
-note "ID 2 green, and neither should fall back to the firmware light blue after a few seconds."
+note "not verified by this script: look at the laptop now. The interior logo (ID 2) should stay"
+note "blue and the lid logo (ID 3) green, and neither should fall back to the firmware light blue"
+note "after a few seconds."
 
 summary "external-colour-persistence"

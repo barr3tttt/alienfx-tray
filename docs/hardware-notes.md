@@ -83,8 +83,8 @@ Observed on an m15 R7 AMD:
 
 | ID | Fixture | Confidence |
 |---|---|---|
-| 0 | rear ring (zone 0) | confirmed |
-| 1 | rear ring (zone 1) | confirmed |
+| 0 | rear ring | confirmed |
+| 1 | rear ring | confirmed |
 | 2 | interior logo | confirmed |
 | 3 | lid logo | confirmed |
 | 4 | no visible light | confirmed |
@@ -94,10 +94,16 @@ Observed on an m15 R7 AMD:
 The rear ring is driven by two light IDs, 0 and 1.  Before the colour-persistence
 fix a mono-colour probe of ID 0 appeared to do nothing because the colour washed
 out; once colours held, lighting either ID white produced a visible white ring.
-The two IDs carry distinct colours so the ring can show two at once.
+The two IDs carry distinct colours so the ring can show two at once. The application
+nevertheless presents them as a single "Rear ring" zone and the lighting engine sends each
+colour to both IDs (`zoneHardwareIds` in `src/core/scheme.h`); only the probe addresses them
+separately.
 
 IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
-0x5b--0x60 loop, but they produce no visible light on this chassis.
+0x5b--0x60 loop, but they produce no visible light on this chassis, so the application does
+not list them as zones. Configs written before schema version 2 are migrated once on load:
+zones 4 and 5 are dropped, zones 0 and 1 are collapsed into one rear-ring entry, and the
+original file is kept as `config.json.bak`.
 
 ## Measured latencies
 
@@ -115,13 +121,14 @@ With `ALIENFX_TRAY_TIMING=1`:
 
 Two consequences shape the design:
 
-- **Send only what changed.** Six zones at 175 ms is over a second, which would put a
-  colour wheel drag visibly behind the cursor. Editing one zone costs one write.
+- **Send only what changed.** A full repaint of the three default zones is four hardware
+  writes (the rear ring counts twice), 700 ms at 175 ms each, which would put a colour wheel
+  drag visibly behind the cursor. Editing one zone costs one write, two for the rear ring.
 - **Different idle timeouts per domain.** Releasing the external controller costs 1600 ms
   to reopen and gains nothing, so it is held for 20 s. The keyboard controller is released
   after 1.5 s, for the reason in the next section.
 
-For comparison, driving the same six zones through six `alienfx-cli` invocations takes
+For comparison, driving six zones through six `alienfx-cli` invocations takes
 about 11.6 s, because each process pays full USB enumeration. Linking the SDK rather than
 shelling out is worth roughly a factor of four even before change tracking.
 

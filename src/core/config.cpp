@@ -6,8 +6,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <set>
 #include <system_error>
 #include <utility>
+
+#include <unistd.h>
 
 namespace alienfx {
 namespace {
@@ -207,6 +210,74 @@ Config Config::defaults() {
     return config;
 }
 
+namespace {
+
+bool isOldDefaultName(const std::string& name) {
+    constexpr const char* olds[] = {
+        "Unidentified (ID 0)", "Rear ring (provisional)",
+        "Unidentified (ID 4)", "Unidentified (ID 5)",
+        "Rear ring (zone 0)", "Rear ring (zone 1)",
+        "No visible light (zone 4)", "No visible light (zone 5)",
+    };
+    return std::ranges::find(olds, name) != std::end(olds);
+}
+
+}  // namespace
+
+bool migrateConfig(Config& config) {
+    if (config.schemaVersion >= Config::kSchemaVersion) return false;
+
+    for (Scheme& scheme : config.schemes) {
+        auto& zones = scheme.external.zones;
+
+        // Step 1: remove zones 4 and 5, which light nothing visible.
+        std::erase_if(zones, [](const ExternalZone& z) {
+            return z.lightId == 4 || z.lightId == 5;
+        });
+
+        // Step 2: collapse zones 0 and 1 into a single Rear ring entry.
+        const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
+            for (ExternalZone& z : zones)
+                if (z.lightId == id) return &z;
+            return nullptr;
+        };
+
+        ExternalZone* zone0 = findZone(0);
+        ExternalZone* zone1 = findZone(1);
+
+        if (zone1) {
+            if (zone0) {
+                // Both exist: zone 0's data wins.
+                std::erase_if(zones, [](const ExternalZone& z) { return z.lightId == 1; });
+            } else {
+                // Only zone 1 exists: reparent it to lightId 0.
+                zone1->lightId = 0;
+            }
+        }
+
+        // Step 3: rename zones whose names match an old default to the current default.
+        for (ExternalZone& zone : zones) {
+            if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
+        }
+
+        // Step 4: de-duplicate by lightId, keeping the first occurrence.
+        std::set<std::uint8_t> seen;
+        std::erase_if(zones, [&seen](const ExternalZone& z) {
+            return !seen.insert(z.lightId).second;
+        });
+    }
+
+    config.schemaVersion = Config::kSchemaVersion;
+    return true;
+}
+
+bool backupConfigFile(const std::filesystem::path& source, const std::string& contents) {
+    std::ofstream out(source.string() + ".bak", std::ios::binary | std::ios::trunc);
+    out << contents;
+    out.flush();
+    return static_cast<bool>(out);
+}
+
 std::filesystem::path configDir() {
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg)
         return std::filesystem::path(xdg) / "alienfx-tray";
@@ -246,6 +317,7 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
     }
 
     Config config;
+    config.schemaVersion = version;
     if (root.contains("schemes") && root["schemes"].is_array()) {
         for (const json& entry : root["schemes"]) {
             Scheme scheme;
@@ -291,9 +363,20 @@ LoadResult loadConfig(const std::filesystem::path& path) {
         return result;
     }
     result.config = std::move(parsed);
+
+    const bool migrated = migrateConfig(result.config);
+
     // Built-ins are re-seeded rather than merged, so editing one in place can never destroy
     // it for good. Deleting one is a different intent and is recorded, so it stays deleted.
     result.config.restoreMissingBuiltins();
+
+    // Rewriting the file stamps the new version, so the next load skips the migration and
+    // leaves the backup of the original untouched.
+    if (migrated && backupConfigFile(path, text)) {
+        std::string saveError;
+        saveConfig(result.config, path, saveError);
+    }
+
     return result;
 }
 
@@ -306,7 +389,7 @@ bool saveConfig(const Config& config, const std::filesystem::path& path, std::st
     }
 
     // Temp file in the same directory so the rename is atomic on the same filesystem.
-    const std::filesystem::path temp = path.string() + ".tmp";
+    const std::filesystem::path temp = path.string() + "." + std::to_string(::getpid()) + ".tmp";
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
         if (!out) {
