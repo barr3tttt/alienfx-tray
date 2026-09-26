@@ -10,6 +10,8 @@
 #include <system_error>
 #include <utility>
 
+#include <unistd.h>
+
 namespace alienfx {
 namespace {
 
@@ -269,12 +271,11 @@ bool migrateConfig(Config& config) {
     return true;
 }
 
-bool backupConfigFile(const std::filesystem::path& source) {
-    const auto dest = source.string() + ".bak";
-    std::error_code ec;
-    std::filesystem::copy_file(source, dest, std::filesystem::copy_options::overwrite_existing,
-                               ec);
-    return !ec;
+bool backupConfigFile(const std::filesystem::path& source, const std::string& contents) {
+    std::ofstream out(source.string() + ".bak", std::ios::binary | std::ios::trunc);
+    out << contents;
+    out.flush();
+    return static_cast<bool>(out);
 }
 
 std::filesystem::path configDir() {
@@ -371,7 +372,7 @@ LoadResult loadConfig(const std::filesystem::path& path) {
 
     // Rewriting the file stamps the new version, so the next load skips the migration and
     // leaves the backup of the original untouched.
-    if (migrated && backupConfigFile(path)) {
+    if (migrated && backupConfigFile(path, text)) {
         std::string saveError;
         saveConfig(result.config, path, saveError);
     }
@@ -388,7 +389,7 @@ bool saveConfig(const Config& config, const std::filesystem::path& path, std::st
     }
 
     // Temp file in the same directory so the rename is atomic on the same filesystem.
-    const std::filesystem::path temp = path.string() + ".tmp";
+    const std::filesystem::path temp = path.string() + "." + std::to_string(::getpid()) + ".tmp";
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
         if (!out) {

@@ -54,8 +54,8 @@ struct Config {
 // the current version, so it runs once per file. Returns true if the config was upgraded.
 [[nodiscard]] bool migrateConfig(Config& config);
 
-// Copy the source file to source with ".bak" appended. Returns true if the copy succeeded.
-bool backupConfigFile(const std::filesystem::path& source);
+// Writes contents to source with ".bak" appended. Returns true if the write succeeded.
+bool backupConfigFile(const std::filesystem::path& source, const std::string& contents);
 
 // $XDG_CONFIG_HOME/alienfx-tray, falling back to ~/.config/alienfx-tray.
 [[nodiscard]] std::filesystem::path configDir();

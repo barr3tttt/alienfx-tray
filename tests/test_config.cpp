@@ -305,8 +305,9 @@ class TestConfig : public QObject {
         std::string error;
         QVERIFY2(saveConfig(Config::defaults(), path, error), error.c_str());
         QVERIFY(std::filesystem::exists(path));
-        QVERIFY2(!std::filesystem::exists(path.string() + ".tmp"),
-                 "the temporary file must not be left behind");
+        const auto entries = std::distance(std::filesystem::directory_iterator(path.parent_path()),
+                                           std::filesystem::directory_iterator());
+        QVERIFY2(entries == 1, "the temporary file must not be left behind");
 
         Config parsed;
         QVERIFY(deserializeConfig(readAll(path), parsed, error));
