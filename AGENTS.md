@@ -93,6 +93,10 @@ A reboot restores firmware defaults, which is what makes this hardware safe to e
 with. This application never issues the SDK's save-to-device commands at all - login and
 resume repaint anyway, so persistence would buy nothing and cost the safety net.
 
+Older config files are migrated to the current zone layout once on load, keeping the
+original as `config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in
+`src/core/config.cpp`.
+
 ## Lessons (append-only)
 - 2026-09-13: hidapi's libusb backend never re-attaches the kernel driver. Its
   `libusb_attach_kernel_driver` calls sit inside `#ifdef DETACH_KERNEL_DRIVER` and its
@@ -137,3 +141,10 @@ resume repaint anyway, so persistence would buy nothing and cost the safety net.
   toolchain configured a tree, so read it before concluding a dependency was uninstalled:
   `dnf history` showing no recent transaction means it was never a host package at all.
   Build and test with the `flatpak run ... org.kde.Sdk//6.10` invocation in the README.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
