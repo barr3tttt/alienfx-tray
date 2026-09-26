@@ -349,6 +349,7 @@ class TestConfig : public QObject {
     // A config with separate zone 0 and 1 entries collapses them into one Rear ring.
     void migrationCollapsesDuplicateRingZones() {
         Config config;
+        config.schemaVersion = 1;
         Scheme s;
         s.name = "test";
         s.external.zones.push_back(
@@ -375,6 +376,7 @@ class TestConfig : public QObject {
     // Zones 4 and 5 light nothing visible: migration removes them.
     void migrationRemovesInvisibleZones() {
         Config config;
+        config.schemaVersion = 1;
         Scheme s;
         s.name = "test";
         s.external.zones.push_back(
@@ -402,6 +404,7 @@ class TestConfig : public QObject {
     // Old default names are replaced with current names. Custom names survive.
     void migrationRenamesOldDefaultsButNotCustomNames() {
         Config config;
+        config.schemaVersion = 1;
         Scheme s;
         s.name = "test";
         s.external.zones.push_back(
@@ -423,6 +426,7 @@ class TestConfig : public QObject {
     // Running migration twice is safe - the second pass makes no changes.
     void migrationIsIdempotent() {
         Config config;
+        config.schemaVersion = 1;
         Scheme s;
         s.name = "test";
         s.external.zones.push_back(
@@ -474,6 +478,127 @@ class TestConfig : public QObject {
         QVERIFY2(std::filesystem::exists(backupPath),
                  "backup file must be created on first migrating load");
         QCOMPARE(readAll(backupPath), oldText);
+    }
+    // The first release named the zones after its guesses. Those names reached saved configs
+    // too, and must not survive as the label on the one Rear ring entry.
+    void migrationRenamesFirstReleaseDefaults() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string text = R"CONF({
+          "schemaVersion": 1,
+          "activeScheme": "x",
+          "schemes": [{"name": "x",
+                       "external": {"zones": [
+                         {"id": 0, "name": "Unidentified (ID 0)", "color": "#ff0000"},
+                         {"id": 1, "name": "Rear ring (provisional)", "color": "#00ff00"},
+                         {"id": 2, "name": "Interior logo", "color": "#0000ff"},
+                         {"id": 3, "name": "Lid logo", "color": "#ffff00"},
+                         {"id": 4, "name": "Unidentified (ID 4)", "color": "#010101"},
+                         {"id": 5, "name": "Unidentified (ID 5)", "color": "#020202"}
+                       ]}}]
+        })CONF";
+        writeAll(path, text);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+
+        const Scheme* scheme = result.config.findScheme("x");
+        QVERIFY(scheme != nullptr);
+        const auto& zones = scheme->external.zones;
+        QCOMPARE(zones.size(), std::size_t(3));
+        QCOMPARE(zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(zones[0].name, std::string("Rear ring"));
+        QCOMPARE(zones[0].color.ac, (Rgb{255, 0, 0}));
+        QCOMPARE(zones[1].name, std::string("Interior logo"));
+        QCOMPARE(zones[2].name, std::string("Lid logo"));
+    }
+
+    // Deleting a shipped preset is recorded so it stays deleted. Upgrading the layout of an
+    // old config is not a reason to bring it back.
+    void aDeletedBuiltInStaysDeletedThroughMigration() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string deleted = builtinSchemes().back().name;
+        const std::string text = R"CONF({
+          "schemaVersion": 1,
+          "activeScheme": "x",
+          "removedBuiltins": ["DELETED"],
+          "schemes": [{"name": "x",
+                       "external": {"zones": [
+                         {"id": 0, "name": "Rear ring (zone 0)", "color": "#ff0000"},
+                         {"id": 1, "name": "Rear ring (zone 1)", "color": "#00ff00"}
+                       ]}}]
+        })CONF";
+        std::string withName = text;
+        withName.replace(withName.find("DELETED"), 7, deleted);
+        writeAll(path, withName);
+
+        QVERIFY(loadConfig(path).config.findScheme(deleted) == nullptr);
+        QVERIFY2(loadConfig(path).config.findScheme(deleted) == nullptr,
+                 "a deleted built-in must not come back on a later load either");
+    }
+
+    // Migration is one-shot: once a config is on the current schema, IDs that a pre-v2
+    // config would have lost are deliberate and stay.
+    void aCurrentSchemaConfigIsNotMigrated() {
+        Config config;
+        Scheme s;
+        s.name = "probe";
+        s.external.zones.push_back(ExternalZone{1, "Rear ring (zone 1)", uniform(Rgb{1, 1, 1})});
+        s.external.zones.push_back(ExternalZone{4, "Probe 4", uniform(Rgb{2, 2, 2})});
+        s.external.zones.push_back(ExternalZone{5, "Probe 5", uniform(Rgb{3, 3, 3})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "probe";
+
+        Config parsed;
+        std::string error;
+        QVERIFY2(deserializeConfig(serializeConfig(config), parsed, error), error.c_str());
+        QVERIFY(!migrateConfig(parsed));
+
+        const auto& zones = parsed.schemes.front().external.zones;
+        QCOMPARE(zones.size(), std::size_t(3));
+        QCOMPARE(zones[0].lightId, std::uint8_t(1));
+        QCOMPARE(zones[0].name, std::string("Rear ring (zone 1)"));
+        QCOMPARE(zones[1].lightId, std::uint8_t(4));
+        QCOMPARE(zones[2].lightId, std::uint8_t(5));
+    }
+
+    // The first migrating load keeps the original as the backup and stamps the file with the
+    // current schema, so a later load neither migrates again nor overwrites that backup.
+    void migrationRunsOnceAndKeepsTheOriginalBackup() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string oldText = R"CONF({
+          "schemaVersion": 1,
+          "activeScheme": "x",
+          "schemes": [{"name": "x",
+                       "external": {"zones": [
+                         {"id": 0, "name": "Rear ring (zone 0)", "color": "#ff0000"},
+                         {"id": 1, "name": "Rear ring (zone 1)", "color": "#00ff00"}
+                       ]}}]
+        })CONF";
+        writeAll(path, oldText);
+        const auto backupPath = path.string() + ".bak";
+
+        QVERIFY(loadConfig(path).error.empty());
+        QCOMPARE(readAll(backupPath), oldText);
+
+        Config onDisk;
+        std::string error;
+        QVERIFY2(deserializeConfig(readAll(path), onDisk, error), error.c_str());
+        QCOMPARE(onDisk.schemaVersion, Config::kSchemaVersion);
+        QCOMPARE(onDisk.findScheme("x")->external.zones.size(), std::size_t(1));
+
+        std::filesystem::remove(backupPath);
+        QVERIFY(loadConfig(path).error.empty());
+        QVERIFY2(!std::filesystem::exists(backupPath),
+                 "a config already on the current schema must not be backed up again");
     }
 };
 
