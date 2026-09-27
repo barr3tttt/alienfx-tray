@@ -37,8 +37,8 @@ void DeviceThread::setExternalStateSurvivesIdleRelease(bool survives) {
     if (worker_) worker_->setExternalStateSurvivesIdleRelease(survives);
 }
 
-void DeviceThread::markAppliedStateUnknown() {
-    if (worker_) worker_->markAppliedStateUnknown();
+void DeviceThread::markResumed() {
+    if (worker_) worker_->markResumed();
 }
 
 bool DeviceThread::stop(std::chrono::milliseconds limit) {

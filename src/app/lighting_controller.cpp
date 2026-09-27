@@ -2,8 +2,10 @@
 
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
+#include "app/apply_mode.h"
 #include "app/device_thread.h"
 #include "app/device_worker.h"
 
@@ -14,7 +16,7 @@ LightingController::LightingController(QObject* parent)
 
 LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs,
                                        QObject* parent)
-    : QObject(parent) {
+    : QObject(parent), applyWatchdogMs_(applyWatchdogMs) {
     LoadResult loaded = loadConfig(configPath());
     config_ = std::move(loaded.config);
     if (!loaded.error.empty()) {
@@ -64,7 +66,13 @@ void LightingController::submitCurrent() {
     if (!deviceThread_) return;
     pendingGeneration_ =
         deviceThread_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
-    if (watchdog_) watchdog_->start();
+    armWatchdog();
+}
+
+void LightingController::armWatchdog() {
+    if (!watchdog_) return;
+    const auto stretch = static_cast<int>(std::max<qint64>(resumeWait_.remainingTime(), 0));
+    watchdog_->start(applyWatchdogMs_ + stretch);
 }
 
 void LightingController::applyWorkingScheme(const Scheme& scheme) {
@@ -130,7 +138,9 @@ void LightingController::setResumeWatched(bool watched) {
 }
 
 void LightingController::onSystemResumed() {
-    if (deviceThread_) deviceThread_->markAppliedStateUnknown();
+    if (deviceThread_) deviceThread_->markResumed();
+    resumeWait_ = QDeadlineTimer(
+        std::chrono::duration_cast<std::chrono::milliseconds>(kDeviceWaitTimeout));
     submitCurrent();
 }
 
@@ -166,7 +176,7 @@ void LightingController::onApplyDeferred(quint64) {
     // Proof of life. The worker is waiting on another process rather than stuck in a device
     // call, so the deadline starts again: without this the watchdog would eventually call a
     // perfectly responsive controller unresponsive for being patient.
-    if (watchdog_) watchdog_->start();
+    armWatchdog();
 }
 
 DomainStatus LightingController::watchdogStamp() {

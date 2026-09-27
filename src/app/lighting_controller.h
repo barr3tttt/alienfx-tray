@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDeadlineTimer>
 #include <QObject>
 #include <QString>
 
@@ -111,6 +112,7 @@ class LightingController : public QObject {
 
    private:
     void submitCurrent();
+    void armWatchdog();
     void setConfigError(QString error);
     [[nodiscard]] static DomainStatus watchdogStamp();
 
@@ -128,6 +130,10 @@ class LightingController : public QObject {
     // The newest scheme handed to the worker. A slow apply that has already been superseded
     // must not disarm the watchdog the apply after it is relying on.
     quint64 pendingGeneration_ = 0;
+    int applyWatchdogMs_ = kApplyWatchdogMs;
+    // Until this expires the worker may be waiting for the controllers to come back from a
+    // suspend, and every apply deadline is stretched by what is left of that wait.
+    QDeadlineTimer resumeWait_{0};
 
     std::unique_ptr<DeviceThread> deviceThread_;
     QTimer* saveTimer_ = nullptr;

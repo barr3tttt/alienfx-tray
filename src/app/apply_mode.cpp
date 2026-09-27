@@ -17,11 +17,6 @@
 namespace alienfx {
 namespace {
 
-// The controllers are not necessarily enumerable the instant a user session starts or a
-// machine comes back from suspend. The script this replaces polled for ten seconds; so do we.
-constexpr auto kDeviceWaitTimeout = std::chrono::seconds(10);
-constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
-
 // See app/apply_mode.h - these are read by the login unit and the resume hook.
 constexpr int kExitApplied = 0;
 constexpr int kExitNothingApplied = 1;
@@ -94,8 +89,8 @@ bool mightStillComeGood(DeviceState state) {
             return false;
         case DeviceState::Waiting:
         case DeviceState::Unresponsive:
-            // Neither is reachable here: both are produced by the tray, and this poll runs
-            // only in the headless modes, which hold the device lock for their whole run.
+            // Neither is reachable here: both are produced above the engine, by the tray's
+            // worker and controller, never by the engine this poll drives.
             return false;
     }
     std::unreachable();

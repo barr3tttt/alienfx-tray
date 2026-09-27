@@ -40,7 +40,7 @@ class DeviceThread : public QObject {
 
     // See DeviceWorker. Never block.
     void setExternalStateSurvivesIdleRelease(bool survives);
-    void markAppliedStateUnknown();
+    void markResumed();
 
     // Asks the worker to release its devices, then waits at most `limit` for the thread to
     // finish. Returns false if it was still running when the limit expired, in which case it

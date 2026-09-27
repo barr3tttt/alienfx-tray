@@ -34,6 +34,8 @@ struct Painted {
     std::atomic<bool> open{false};
     std::atomic<int> opens{0};
     std::atomic<int> keyboardWrites{0};
+    // How many more opens of the external controller report it not enumerated yet.
+    std::atomic<int> missingOpens{0};
 };
 
 class CountingKeyboard final : public IKeyboardDevice {
@@ -70,9 +72,15 @@ class CountingExternal final : public IExternalDevice {
     explicit CountingExternal(std::shared_ptr<Painted> painted) : painted_(std::move(painted)) {}
 
     bool open() override {
+        painted_->opens.fetch_add(1);
+        if (painted_->missingOpens.load() > 0) {
+            painted_->missingOpens.fetch_sub(1);
+            status_ = DomainStatus{DeviceState::Missing, "fake: not enumerated yet"};
+            return false;
+        }
         open_ = true;
         painted_->open.store(true);
-        painted_->opens.fetch_add(1);
+        status_ = DomainStatus{DeviceState::Ready, {}};
         return true;
     }
     void close() override {
@@ -92,15 +100,14 @@ class CountingExternal final : public IExternalDevice {
 
     bool commit() override { return true; }
 
-    [[nodiscard]] DomainStatus status() const override {
-        return DomainStatus{DeviceState::Ready, {}};
-    }
+    [[nodiscard]] DomainStatus status() const override { return status_; }
 
     static constexpr int kFirstFrameRed = 11;
 
    private:
     std::shared_ptr<Painted> painted_;
     bool open_ = false;
+    DomainStatus status_{DeviceState::Ready, {}};
 };
 
 class StubWorker final : public DeviceWorker {
@@ -161,6 +168,7 @@ class TestDeviceWorkerLock : public QObject {
     void anotherHolderInBetweenMakesTheWorkerRepaint();
     void withoutAResumeWatchEveryIdleReleaseRepaints();
     void aResumeRepaintsBothDomains();
+    void aResumeWaitsForAControllerThatHasNotComeBackYet();
     void theSleepMonitorReportsOnlyTheWayBackUp();
 
    private:
@@ -402,6 +410,32 @@ void TestDeviceWorkerLock::aResumeRepaintsBothDomains() {
 
     QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() >= firstPaint * 2, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(painted_->keyboardWrites.load() >= keyboardBefore * 2, 5000);
+
+    controller.shutdown();
+}
+
+// On resume the controllers are not necessarily enumerable yet. Without the sleep hook the
+// tray's own repaint is the only one, so it waits for them the way --apply does rather than
+// making one attempt and leaving the lights on firmware defaults.
+void TestDeviceWorkerLock::aResumeWaitsForAControllerThatHasNotComeBackYet() {
+    DeviceSet devices;
+    devices.keyboard = std::make_unique<CountingKeyboard>(painted_);
+    devices.external = std::make_unique<CountingExternal>(painted_);
+    LightingController controller(new StubWorker(std::move(devices), kShortIdleMs),
+                                  LightingController::kApplyWatchdogMs);
+    controller.setResumeWatched(true);
+
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() > 0 && !painted_->open.load(), 5000);
+    const int firstPaint = painted_->zoneCalls.load();
+    const int opensBefore = painted_->opens.load();
+
+    constexpr int kMissingPolls = 3;
+    painted_->missingOpens.store(kMissingPolls);
+    controller.onSystemResumed();
+
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() >= firstPaint * 2, 10000);
+    QCOMPARE(painted_->opens.load(), opensBefore + kMissingPolls + 1);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.status(Domain::External).ok(), 5000);
 
     controller.shutdown();
 }

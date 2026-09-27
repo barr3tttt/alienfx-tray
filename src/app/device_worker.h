@@ -76,11 +76,13 @@ class DeviceWorker : public QObject {
     // idle release forgets it and the next apply repaints the lot. Off until told otherwise.
     void setExternalStateSurvivesIdleRelease(bool survives);
 
-    // Callable from any thread. Neither controller may still show what it was sent - the
-    // machine has resumed, and the keyboard can still be inside its idle window from before
-    // the suspend - so the next apply repaints both in full. Takes effect before
-    // whatever is applied next, including a scheme already pending.
-    void markAppliedStateUnknown();
+    // Callable from any thread. The machine has resumed: neither controller may still show
+    // what it was sent - and the keyboard can still be inside its idle window from before the
+    // suspend - nor be enumerable yet. The next apply drops any handle kept across the
+    // suspend, forgets what it painted, and waits for the controllers the way --apply does
+    // (applyDomainsWithRetry, up to kDeviceWaitTimeout) before giving up on either. Takes
+    // effect before whatever is applied next, including a scheme already pending.
+    void markResumed();
 
    public slots:
     // Runs on the worker thread once it starts.
@@ -114,6 +116,7 @@ class DeviceWorker : public QObject {
     void publishStatus(Domain domain, const DomainStatus& status);
     void deferUntilLockFrees(ResolvedScheme scheme, quint64 generation);
     void releaseIdle(Domain domain);
+    ApplyResult repaintAfterResume(const ResolvedScheme& scheme);
     // The lock is only meaningful while a handle is open, so it goes back with the last one.
     void releaseLockIfIdle();
 
@@ -130,7 +133,7 @@ class DeviceWorker : public QObject {
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
     std::atomic<bool> externalStateSurvivesIdleRelease_{false};
-    std::atomic<bool> appliedStateUnknown_{false};
+    std::atomic<bool> resumed_{false};
     bool shuttingDown_ = false;
 
     DomainStatus lastKeyboardStatus_;

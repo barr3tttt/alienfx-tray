@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <utility>
 
+#include "app/apply_mode.h"
 #include "device/device_factory.h"
 #include "device/usb_context.h"
 
@@ -59,7 +61,7 @@ void DeviceWorker::setExternalStateSurvivesIdleRelease(bool survives) {
     externalStateSurvivesIdleRelease_.store(survives);
 }
 
-void DeviceWorker::markAppliedStateUnknown() { appliedStateUnknown_.store(true); }
+void DeviceWorker::markResumed() { resumed_.store(true); }
 
 quint64 DeviceWorker::submit(const ResolvedScheme& scheme) {
     quint64 generation = 0;
@@ -104,9 +106,8 @@ void DeviceWorker::processPending() {
     }
     retryDelayMs_ = kInitialRetryDelayMs;
 
-    if (appliedStateUnknown_.exchange(false)) engine_->forgetAppliedState();
-
-    const ApplyResult result = engine_->apply(*scheme);
+    const ApplyResult result =
+        resumed_.exchange(false) ? repaintAfterResume(*scheme) : engine_->apply(*scheme);
 
     publishStatus(Domain::Keyboard, result.keyboard);
     publishStatus(Domain::External, result.external);
@@ -115,6 +116,21 @@ void DeviceWorker::processPending() {
     if (externalIdleTimer_) externalIdleTimer_->start();
 
     emit applyFinished(generation, result.allOk());
+}
+
+ApplyResult DeviceWorker::repaintAfterResume(const ResolvedScheme& scheme) {
+    engine_->releaseDevices();
+    engine_->forgetAppliedState();
+
+    const ApplyResult result = applyDomainsWithRetry(*engine_, scheme, kDeviceWaitTimeout,
+                                                     kDeviceRetryInterval, std::cerr);
+    for (Domain domain : kAllDomains) {
+        const DomainStatus& status = result.forDomain(domain);
+        if (!status.ok())
+            qWarning("alienfx-tray: not repainted after resume: %s",
+                     describe(domain, status).c_str());
+    }
+    return result;
 }
 
 void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation) {
