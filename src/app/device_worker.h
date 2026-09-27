@@ -24,11 +24,11 @@ class UsbContext;
 //
 // Two properties matter more than anything else here:
 //
-//  * Latest-wins coalescing. A full external apply is around 36 HID exchanges - the APIv4
-//    power path walks cid 0x5b..0x60 for each light - so 50-100ms for six zones. A colour
-//    wheel drag produces far more frames than that. Queuing them would leave the lights
-//    seconds behind the cursor, so intermediate frames are dropped and only the newest
-//    scheme is ever applied.
+//  * Latest-wins coalescing. A full external apply walks cid 0x5b..0x60 on the APIv4 power
+//    path for each light - about 110-140 ms per zone, so roughly half a second for the four
+//    default zones. A colour wheel drag produces far more frames than that. Queuing them
+//    would leave the lights seconds behind the cursor, so intermediate frames are dropped
+//    and only the newest scheme is ever applied.
 //
 //  * Short claims. Claiming the keyboard controller detaches usbhid from the interface the
 //    user types on. Handles are opened on demand and released after a short idle period, so

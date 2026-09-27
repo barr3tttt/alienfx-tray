@@ -161,7 +161,7 @@ void LightingController::onApplyFinished(quint64 generation, bool) {
 
     // The apply came back after all, so the stamp below was wrong. Any status the worker
     // does not consider changed it will never re-send - the slow case is a scheme with many
-    // external zones, where 175 ms each outruns the watchdog and then reports Ready again -
+    // external zones, where 110-140 ms each outruns the watchdog and then reports Ready again -
     // so put back what it last told us rather than leaving a healthy controller labelled dead.
     watchdogTripped_ = false;
     for (Domain domain : kAllDomains) {

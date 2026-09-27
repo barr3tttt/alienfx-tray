@@ -109,6 +109,10 @@ system-sleep hook calling `~/.local/bin/alienfx-apply` - the usual arrangement f
 hardware - the Schemes tab has a button that makes that one script delegate here, backing
 up whatever was there first. The unit and the hook are not touched.
 
+A running tray also repaints on its own after a resume, listening for logind's
+`PrepareForSleep` on the system bus and waiting up to 10 seconds for the controllers to
+re-enumerate, so the hook is what covers the case where the tray is not running.
+
 Note that a *user* systemd unit cannot handle resume: the user manager has no
 `suspend.target`, so such a unit silently never fires. The hook has to be at system level.
 
