@@ -36,9 +36,11 @@ struct ApplyResult {
 //    zones on every frame of a colour wheel drag would put the lights half a second behind
 //    the cursor; sending only the zone being edited keeps it under 150 ms.
 //
-// The change tracking is discarded whenever the devices are released or a command fails,
-// because at that point what the hardware is actually showing is no longer known. Every
-// known external zone the next scheme does not carry is then assumed lit and driven off.
+// The change tracking is discarded whenever what the hardware is showing is no longer known:
+// a command failed, a controller turned up closed without being released, or the caller
+// says someone else may have painted it. Every known external zone the next scheme does not
+// carry is then assumed lit and driven off. Releasing the external handle on purpose is not
+// one of those - closing it changes nothing the lights show - so its tracking survives.
 class LightingEngine {
    public:
     LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
@@ -62,7 +64,17 @@ class LightingEngine {
     // keyboard controller detaches usbhid from the interface the user types on, so it has to
     // go back quickly, while the external controller charges a real enumeration round for
     // every open and is worth keeping.
+    //
+    // The keyboard starts from scratch after a release, because on APIv5 the brightness
+    // command is what wakes it. The external controller keeps showing what it was sent, so
+    // an apply after its release sends only what changed, and nothing at all - not even an
+    // open - when nothing did.
     void releaseDevice(Domain domain);
+
+    // Discard everything believed about both controllers, so the next apply sends the lot and
+    // drives off every known external zone the scheme does not carry. For callers that know
+    // something else may have painted the hardware while it was released.
+    void forgetAppliedState();
 
     [[nodiscard]] bool anyDeviceOpen() const;
     [[nodiscard]] bool isDeviceOpen(Domain domain) const;
@@ -86,6 +98,9 @@ class LightingEngine {
     // everything".
     std::optional<KeyboardSettings> appliedKeyboard_;
     std::optional<ExternalSettings> appliedExternal_;
+    // Set by a deliberate release, so the reopen that follows can tell it apart from finding
+    // the controller closed under it.
+    bool externalReleased_ = false;
 };
 
 }  // namespace alienfx

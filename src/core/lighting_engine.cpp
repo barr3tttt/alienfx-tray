@@ -83,13 +83,16 @@ DomainStatus LightingEngine::applyKeyboard(const KeyboardSettings& settings) {
 DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     if (!external_) return DomainStatus{DeviceState::Missing, "no external backend"};
 
-    // Known to be showing nothing and asked to show nothing: never open the controller.
-    if (settings.zones.empty() && appliedExternal_ && appliedExternal_->zones.empty())
-        return DomainStatus{DeviceState::Ready, "no zones configured"};
+    // Known to be showing exactly this already: never open the controller.
+    if (appliedExternal_ && *appliedExternal_ == settings) {
+        if (settings.zones.empty()) return DomainStatus{DeviceState::Ready, "no zones configured"};
+        return external_->status();
+    }
 
     const bool wasOpen = external_->isOpen();
     if (!wasOpen) {
-        appliedExternal_.reset();
+        if (!externalReleased_) appliedExternal_.reset();
+        externalReleased_ = false;
         if (!external_->open()) {
             appliedExternal_.reset();
             return external_->status();
@@ -101,8 +104,8 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     // Lights that may still be lit and that this scheme no longer carries have to be driven
     // off, or they stay lit forever - an explicit empty zone list in a hand-edited config
     // means "no external lighting", not "stop updating the hardware". When the previous
-    // apply is known that is exactly its lights. When it is not - a fresh engine, an idle
-    // release, a failed command - the controller can be showing anything an earlier session
+    // apply is known that is exactly its lights. When it is not - a fresh engine, a failed
+    // command, another process painting while it was released - the controller can be showing anything an earlier session
     // painted, so every light known to be visible on this chassis is assumed lit.
     // A black pair, not a removal: there is no off command for these lights, only colours.
     const std::vector<std::uint8_t> wanted = collectHardwareIds(settings);
@@ -169,14 +172,18 @@ void LightingEngine::releaseDevices() {
 }
 
 void LightingEngine::releaseDevice(Domain domain) {
-    // Once a handle is gone, what that controller is showing is no longer something we can
-    // claim to know: its next apply starts from scratch.
     if (domain == Domain::Keyboard) {
         if (keyboard_) keyboard_->close();
         appliedKeyboard_.reset();
         return;
     }
-    if (external_) external_->close();
+    if (!external_ || !external_->isOpen()) return;
+    external_->close();
+    externalReleased_ = true;
+}
+
+void LightingEngine::forgetAppliedState() {
+    appliedKeyboard_.reset();
     appliedExternal_.reset();
 }
 

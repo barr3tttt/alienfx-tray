@@ -1,6 +1,8 @@
 #include <QtTest>
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 #include "core/device_interface.h"
 #include "core/lighting_engine.h"
@@ -264,10 +266,10 @@ class TestLightingEngine : public QObject {
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
     }
 
-    // Everything we think we know about the hardware's state is only true while we hold the
-    // handle. After a release - the idle timeout, a suspend, a scheme applied by the resume
-    // hook - the next apply has to send the lot.
-    void releasingTheDevicesForcesAFullResend() {
+    // The keyboard is woken by its brightness command, so it starts from scratch after every
+    // release. The external controller keeps showing what it was sent: releasing its handle
+    // changes nothing the lights show, so an unchanged scheme does not even reopen it.
+    void releasingTheDevicesResendsTheKeyboardButNotTheExternalLights() {
         const Scheme scheme = defaultScheme();
 
         auto keyboard = std::make_unique<FakeKeyboardDevice>();
@@ -280,12 +282,59 @@ class TestLightingEngine : public QObject {
         const std::size_t firstPass = externalView->zoneCalls.size();
 
         engine.releaseDevices();
+        QVERIFY(engine.apply(lit(scheme)).allOk());
+
+        QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
+        QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(2));
+        QCOMPARE(externalView->openCount, 1);
+        QCOMPARE(externalView->zoneCalls.size(), firstPass);
+        QCOMPARE(externalView->commitCount, 1);
+    }
+
+    // When something else may have painted the hardware - the resume hook, the login unit -
+    // the caller says so, and everything goes back on the wire.
+    void forgettingTheAppliedStateForcesAFullResend() {
+        const Scheme scheme = defaultScheme();
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeKeyboardDevice* keyboardView = keyboard.get();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(scheme));
+        const std::size_t firstPass = externalView->zoneCalls.size();
+
+        engine.releaseDevices();
+        engine.forgetAppliedState();
         engine.apply(lit(scheme));
 
         QCOMPARE(externalView->zoneCalls.size(), firstPass * 2);
         QCOMPARE(externalView->openCount, 2);
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(2));
+    }
+
+    // A controller found closed without having been released is not known to be showing
+    // anything in particular, so the next apply sends the lot.
+    void aControllerClosedUnderTheEngineForcesAFullResend() {
+        const Scheme scheme = defaultScheme();
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(scheme));
+        const std::size_t firstPass = externalView->zoneCalls.size();
+
+        externalView->close();
+        Scheme changed = scheme;
+        changed.external.zones.front().color = uniform(Rgb{9, 9, 9});
+        engine.apply(lit(changed));
+
+        QCOMPARE(externalView->openCount, 2);
+        QCOMPARE(externalView->zoneCalls.size(), firstPass * 2);
     }
 
     // A refused command means the controller is in an unknown state. Carrying on with a
@@ -611,10 +660,10 @@ class TestLightingEngine : public QObject {
         QCOMPARE(externalView->openCount, 1);
     }
 
-    // The tray releases the external controller after an idle timeout, which discards what
-    // the engine knew it was showing. A scheme switch after that must still clear the zones
-    // the new scheme drops, not leave them on the old colour forever.
-    void shrinkingTheZoneSetAfterAnIdleReleaseStillDrivesRemovedZonesOff() {
+    // The tray releases the external controller after an idle timeout. What the lights show
+    // does not change with the handle, so a scheme switch after that clears exactly the zones
+    // the new scheme drops and leaves the survivors alone.
+    void shrinkingTheZoneSetAfterAnIdleReleaseDrivesOnlyTheRemovedZonesOff() {
         Scheme scheme = defaultScheme();
 
         auto keyboard = std::make_unique<FakeKeyboardDevice>();
@@ -632,19 +681,17 @@ class TestLightingEngine : public QObject {
         QVERIFY(engine.apply(lit(scheme)).external.ok());
         QCOMPARE(externalView->openCount, 2);
 
-        // The dropped zone goes black, and the survivors are repainted from scratch.
-        QCOMPARE(externalView->zoneCalls.size(), std::size_t(8));
+        QCOMPARE(externalView->zoneCalls.size(), std::size_t(5));
         QCOMPARE(externalView->zoneCalls[4].lightId, removedId);
         QCOMPARE(externalView->zoneCalls[4].acColor, (Rgb{0, 0, 0}));
         QCOMPARE(externalView->zoneCalls[4].batteryColor, (Rgb{0, 0, 0}));
-        for (std::size_t i = 5; i < 8; ++i)
-            QVERIFY(externalView->zoneCalls[i].lightId != removedId);
+        QCOMPARE(externalView->brightnessCalls.back().lightIds.size(), std::size_t(3));
         QCOMPARE(externalView->commitCount, 2);
     }
 
     // The same after an idle release when the new scheme has no zones at all: the early
-    // "nothing to do" exit must not fire, because what the lights show is unknown.
-    void emptyingTheZoneSetAfterAnIdleReleaseDrivesEveryVisibleLightOff() {
+    // "nothing to do" exit must not fire while the lights are still showing the old scheme.
+    void emptyingTheZoneSetAfterAnIdleReleaseDrivesEveryLitZoneOff() {
         auto keyboard = std::make_unique<FakeKeyboardDevice>();
         auto external = std::make_unique<FakeExternalDevice>();
         FakeExternalDevice* externalView = external.get();
@@ -660,13 +707,88 @@ class TestLightingEngine : public QObject {
         QVERIFY(engine.apply(lit(empty)).external.ok());
         QCOMPARE(externalView->openCount, 2);
 
-        QCOMPARE(externalView->zoneCalls.size(), std::size_t(8));
-        for (std::size_t i = 4; i < 8; ++i) {
-            QCOMPARE(externalView->zoneCalls[i].lightId, kVisibleHardwareIds[i - 4]);
-            QCOMPARE(externalView->zoneCalls[i].acColor, (Rgb{0, 0, 0}));
-            QCOMPARE(externalView->zoneCalls[i].batteryColor, (Rgb{0, 0, 0}));
+        const std::vector<std::uint8_t> litIds = collectHardwareIds(defaultScheme().external);
+        QCOMPARE(externalView->zoneCalls.size(), 4 + litIds.size());
+        for (std::size_t i = 0; i < litIds.size(); ++i) {
+            QCOMPARE(externalView->zoneCalls[4 + i].lightId, litIds[i]);
+            QCOMPARE(externalView->zoneCalls[4 + i].acColor, (Rgb{0, 0, 0}));
+            QCOMPARE(externalView->zoneCalls[4 + i].batteryColor, (Rgb{0, 0, 0}));
         }
         QCOMPARE(externalView->commitCount, 2);
+    }
+
+    // Every keyboard colour drag applies both domains. Once the external lights are known to
+    // be dark, an idle release must not turn each later drag into a reopen and a rewrite of
+    // the same blacks.
+    void anIdleReleaseThenAKeyboardEditSendsNothingExternal() {
+        Scheme scheme = defaultScheme();
+        scheme.external.zones.clear();
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeKeyboardDevice* keyboardView = keyboard.get();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        QVERIFY(engine.apply(lit(scheme)).external.ok());
+        const std::size_t blacks = externalView->zoneCalls.size();
+
+        engine.releaseDevice(Domain::External);
+
+        scheme.keyboard.color = Rgb{40, 50, 60};
+        const ApplyResult result = engine.apply(lit(scheme));
+        QVERIFY(result.allOk());
+        QCOMPARE(keyboardView->effectCalls.size(), std::size_t(2));
+        QCOMPARE(externalView->openCount, 1);
+        QCOMPARE(externalView->zoneCalls.size(), blacks);
+        QCOMPARE(externalView->commitCount, 1);
+        QVERIFY(!engine.isDeviceOpen(Domain::External));
+
+        // The same holds for a zoned scheme: an unchanged external half is left alone.
+        Scheme zoned = defaultScheme();
+        engine.apply(lit(zoned));
+        const std::size_t painted = externalView->zoneCalls.size();
+        const int opens = externalView->openCount;
+        engine.releaseDevice(Domain::External);
+        zoned.keyboard.color = Rgb{70, 80, 90};
+        QVERIFY(engine.apply(lit(zoned)).allOk());
+        QCOMPARE(externalView->openCount, opens);
+        QCOMPARE(externalView->zoneCalls.size(), painted);
+    }
+
+    // A refused command leaves what the lights show unknown, so a later scheme that drops
+    // zones drives off every visible light it does not carry, not only the ones last sent.
+    void aFailedCommandThenAShrunkSchemeDrivesEveryMissingVisibleZoneOff() {
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(defaultScheme()));
+        engine.releaseDevice(Domain::External);
+
+        externalView->failZone = true;
+        Scheme changed = defaultScheme();
+        changed.external.zones.front().color = uniform(Rgb{5, 5, 5});
+        QVERIFY(!engine.apply(lit(changed)).external.ok());
+        externalView->failZone = false;
+
+        Scheme single = defaultScheme();
+        single.external.zones.resize(1);
+        const std::size_t before = externalView->zoneCalls.size();
+        QVERIFY(engine.apply(lit(single)).external.ok());
+
+        const std::vector<std::uint8_t> kept = collectHardwareIds(single.external);
+        std::vector<std::uint8_t> blacked;
+        for (std::size_t i = before; i < externalView->zoneCalls.size(); ++i)
+            if (externalView->zoneCalls[i].acColor == Rgb{0, 0, 0} &&
+                externalView->zoneCalls[i].batteryColor == Rgb{0, 0, 0})
+                blacked.push_back(externalView->zoneCalls[i].lightId);
+        std::vector<std::uint8_t> expected;
+        for (std::uint8_t id : kVisibleHardwareIds)
+            if (std::find(kept.begin(), kept.end(), id) == kept.end()) expected.push_back(id);
+        QCOMPARE(blacked, expected);
+        QCOMPARE(externalView->zoneCalls.size(), before + expected.size() + kept.size());
     }
 
     // Zone identity is the light ID. Reordering the list paints the same lights in a

@@ -82,10 +82,15 @@ void DeviceWorker::processPending() {
     if (!engine_) return;
 
     // Serialise against the `--apply` the resume hook and the login unit both run.
-    if (!deviceLock_.held() &&
-        !deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
-        deferUntilLockFrees(std::move(*scheme), generation);
-        return;
+    if (!deviceLock_.held()) {
+        if (!deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
+            deferUntilLockFrees(std::move(*scheme), generation);
+            return;
+        }
+        // Whoever held it in between may have painted something else - on resume that is
+        // the hook repainting the saved scheme - so nothing the engine remembers from before
+        // can be trusted.
+        if (deviceLock_.othersHeldSinceLastRelease()) engine_->forgetAppliedState();
     }
     retryDelayMs_ = kInitialRetryDelayMs;
 

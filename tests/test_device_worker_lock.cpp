@@ -97,6 +97,7 @@ class TestDeviceWorkerLock : public QObject {
 
     void aFrameSubmittedWhileTheLockIsHeldIsPaintedWhenItFrees();
     void anOutstandingFrameIsNotReportedAsAFinishedApply();
+    void theLockReportsWhetherAnotherProcessHeldItInBetween();
 
    private:
     std::shared_ptr<Painted> painted_;
@@ -190,6 +191,32 @@ void TestDeviceWorkerLock::anOutstandingFrameIsNotReportedAsAFinishedApply() {
     QVERIFY(finished.first().at(1).toBool());
 
     QVERIFY(thread.stop(DeviceThread::kStopTimeout));
+}
+
+// The tray keeps what it knows about the external lights across its own idle release, which
+// is only safe while nobody else touched them. The lock is the one thing every process that
+// paints has to take, so it is what tells the tray that someone did.
+void TestDeviceWorkerLock::theLockReportsWhetherAnotherProcessHeldItInBetween() {
+    ProcessLock tray;
+    QVERIFY(tray.acquire(std::chrono::milliseconds(500)));
+    QVERIFY2(tray.othersHeldSinceLastRelease(), "a first acquire knows nothing about before");
+    tray.release();
+
+    QVERIFY(tray.acquire(std::chrono::milliseconds(500)));
+    QVERIFY2(!tray.othersHeldSinceLastRelease(), "nobody else took it");
+    tray.release();
+
+    {
+        ProcessLock resumeHook;
+        QVERIFY(resumeHook.acquire(std::chrono::milliseconds(500)));
+    }
+
+    QVERIFY(tray.acquire(std::chrono::milliseconds(500)));
+    QVERIFY2(tray.othersHeldSinceLastRelease(), "the resume hook held it in between");
+    tray.release();
+
+    QVERIFY(tray.acquire(std::chrono::milliseconds(500)));
+    QVERIFY(!tray.othersHeldSinceLastRelease());
 }
 
 QTEST_GUILESS_MAIN(TestDeviceWorkerLock)
