@@ -130,7 +130,7 @@ void LightingController::setResumeWatched(bool watched) {
 }
 
 void LightingController::onSystemResumed() {
-    if (deviceThread_) deviceThread_->markExternalStateUnknown();
+    if (deviceThread_) deviceThread_->markAppliedStateUnknown();
     submitCurrent();
 }
 

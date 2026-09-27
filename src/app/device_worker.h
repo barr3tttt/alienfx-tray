@@ -76,10 +76,11 @@ class DeviceWorker : public QObject {
     // idle release forgets it and the next apply repaints the lot. Off until told otherwise.
     void setExternalStateSurvivesIdleRelease(bool survives);
 
-    // Callable from any thread. The external lights may no longer show what they were sent -
-    // the machine has resumed - so the next apply repaints them in full. Takes effect before
+    // Callable from any thread. Neither controller may still show what it was sent - the
+    // machine has resumed, and the keyboard can still be inside its idle window from before
+    // the suspend - so the next apply repaints both in full. Takes effect before
     // whatever is applied next, including a scheme already pending.
-    void markExternalStateUnknown();
+    void markAppliedStateUnknown();
 
    public slots:
     // Runs on the worker thread once it starts.
@@ -129,7 +130,7 @@ class DeviceWorker : public QObject {
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
     std::atomic<bool> externalStateSurvivesIdleRelease_{false};
-    std::atomic<bool> externalStateUnknown_{false};
+    std::atomic<bool> appliedStateUnknown_{false};
     bool shuttingDown_ = false;
 
     DomainStatus lastKeyboardStatus_;

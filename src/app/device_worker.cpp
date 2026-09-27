@@ -59,7 +59,7 @@ void DeviceWorker::setExternalStateSurvivesIdleRelease(bool survives) {
     externalStateSurvivesIdleRelease_.store(survives);
 }
 
-void DeviceWorker::markExternalStateUnknown() { externalStateUnknown_.store(true); }
+void DeviceWorker::markAppliedStateUnknown() { appliedStateUnknown_.store(true); }
 
 quint64 DeviceWorker::submit(const ResolvedScheme& scheme) {
     quint64 generation = 0;
@@ -104,7 +104,7 @@ void DeviceWorker::processPending() {
     }
     retryDelayMs_ = kInitialRetryDelayMs;
 
-    if (externalStateUnknown_.exchange(false)) engine_->forgetAppliedState(Domain::External);
+    if (appliedStateUnknown_.exchange(false)) engine_->forgetAppliedState();
 
     const ApplyResult result = engine_->apply(*scheme);
 

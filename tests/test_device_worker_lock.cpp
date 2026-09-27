@@ -33,6 +33,36 @@ struct Painted {
     std::atomic<bool> sawFirstFrame{false};
     std::atomic<bool> open{false};
     std::atomic<int> opens{0};
+    std::atomic<int> keyboardWrites{0};
+};
+
+class CountingKeyboard final : public IKeyboardDevice {
+   public:
+    explicit CountingKeyboard(std::shared_ptr<Painted> painted) : painted_(std::move(painted)) {}
+
+    bool open() override {
+        open_ = true;
+        return true;
+    }
+    void close() override { open_ = false; }
+    [[nodiscard]] bool isOpen() const override { return open_; }
+
+    bool setBrightness(Brightness) override {
+        painted_->keyboardWrites.fetch_add(1);
+        return true;
+    }
+    bool applyEffect(KeyboardEffect, Rgb) override {
+        painted_->keyboardWrites.fetch_add(1);
+        return true;
+    }
+
+    [[nodiscard]] DomainStatus status() const override {
+        return DomainStatus{DeviceState::Ready, {}};
+    }
+
+   private:
+    std::shared_ptr<Painted> painted_;
+    bool open_ = false;
 };
 
 class CountingExternal final : public IExternalDevice {
@@ -75,18 +105,22 @@ class CountingExternal final : public IExternalDevice {
 
 class StubWorker final : public DeviceWorker {
    public:
-    explicit StubWorker(DeviceSet devices, int idleMs = 0)
-        : devices_(std::move(devices)), idleMs_(idleMs) {}
+    explicit StubWorker(DeviceSet devices, int idleMs = 0, int keyboardIdleMs = 0)
+        : devices_(std::move(devices)),
+          idleMs_(idleMs),
+          keyboardIdleMs_(keyboardIdleMs > 0 ? keyboardIdleMs : idleMs) {}
 
    protected:
     DeviceSet createDevices() override { return std::move(devices_); }
     [[nodiscard]] int idleReleaseMs(Domain domain) const override {
-        return idleMs_ > 0 ? idleMs_ : DeviceWorker::idleReleaseMs(domain);
+        const int ms = domain == Domain::Keyboard ? keyboardIdleMs_ : idleMs_;
+        return ms > 0 ? ms : DeviceWorker::idleReleaseMs(domain);
     }
 
    private:
     DeviceSet devices_;
     int idleMs_;
+    int keyboardIdleMs_;
 };
 
 constexpr int kShortIdleMs = 50;
@@ -126,7 +160,7 @@ class TestDeviceWorkerLock : public QObject {
     void anIdleReleaseAloneRepaintsNothingWhenResumesAreWatched();
     void anotherHolderInBetweenMakesTheWorkerRepaint();
     void withoutAResumeWatchEveryIdleReleaseRepaints();
-    void aResumeRepaintsTheExternalLights();
+    void aResumeRepaintsBothDomains();
     void theSleepMonitorReportsOnlyTheWayBackUp();
 
    private:
@@ -338,10 +372,15 @@ void TestDeviceWorkerLock::withoutAResumeWatchEveryIdleReleaseRepaints() {
     QVERIFY(thread.stop(DeviceThread::kStopTimeout));
 }
 
-// logind's resume signal reaches the controller, which repaints the external lights in full
-// even though nothing about the scheme changed and nobody else held the lock.
-void TestDeviceWorkerLock::aResumeRepaintsTheExternalLights() {
-    LightingController controller(new StubWorker(countingDevices(painted_), kShortIdleMs),
+// logind's resume signal reaches the controller, which repaints both controllers in full
+// even though nothing about the scheme changed and nobody else held the lock. The keyboard is
+// kept inside its idle window across the "suspend", as it is when the lid closes within a
+// second or so of an edit, so its own release has not already forgotten what it was sent.
+void TestDeviceWorkerLock::aResumeRepaintsBothDomains() {
+    DeviceSet devices;
+    devices.keyboard = std::make_unique<CountingKeyboard>(painted_);
+    devices.external = std::make_unique<CountingExternal>(painted_);
+    LightingController controller(new StubWorker(std::move(devices), kShortIdleMs, 60000),
                                   LightingController::kApplyWatchdogMs);
     controller.setResumeWatched(true);
 
@@ -354,12 +393,15 @@ void TestDeviceWorkerLock::aResumeRepaintsTheExternalLights() {
     QTest::qWait(10 * kShortIdleMs);
     QCOMPARE(painted_->zoneCalls.load(), firstPaint);
     QCOMPARE(painted_->opens.load(), 1);
+    const int keyboardBefore = painted_->keyboardWrites.load();
+    QVERIFY(keyboardBefore > 0);
 
     SleepMonitor monitor(QDBusConnection(QStringLiteral("alienfx-test-no-bus")));
     connect(&monitor, &SleepMonitor::resumed, &controller, &LightingController::onSystemResumed);
     QMetaObject::invokeMethod(&monitor, "handlePrepareForSleep", Q_ARG(bool, false));
 
     QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() >= firstPaint * 2, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->keyboardWrites.load() >= keyboardBefore * 2, 5000);
 
     controller.shutdown();
 }
