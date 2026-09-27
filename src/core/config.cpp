@@ -231,48 +231,33 @@ bool migrateConfig(Config& config) {
     for (Scheme& scheme : config.schemes) {
         auto& zones = scheme.external.zones;
 
+        // v1 -> v2: remove zones 4 and 5, which light nothing visible.
         if (config.schemaVersion < 2) {
-            // v1 -> v2: remove zones 4 and 5, which light nothing visible.
             std::erase_if(zones, [](const ExternalZone& z) {
                 return z.lightId == 4 || z.lightId == 5;
             });
-
-            // Collapse zones 0 and 1 into a single Rear ring entry.
-            const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
-                for (ExternalZone& z : zones)
-                    if (z.lightId == id) return &z;
-                return nullptr;
-            };
-
-            ExternalZone* zone0 = findZone(0);
-            ExternalZone* zone1 = findZone(1);
-
-            if (zone1) {
-                if (zone0) {
-                    std::erase_if(zones, [](const ExternalZone& z) { return z.lightId == 1; });
-                } else {
-                    zone1->lightId = 0;
-                }
-            }
         }
 
-        // v2 -> v3: split the merged rear ring (lightId 0) back into two independent zones
-        // so each segment of the hairline LED can be coloured separately.
+        // v2 -> v3: the rear ring is two independent segments, IDs 0 and 1. A config that
+        // carries only one of them gets the missing segment as a copy of the one it has.
         if (config.schemaVersion < 3) {
-            const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
-                for (ExternalZone& z : zones)
-                    if (z.lightId == id) return &z;
-                return nullptr;
+            const auto findZone = [&](std::uint8_t id) {
+                return std::ranges::find_if(zones,
+                    [id](const ExternalZone& z) { return z.lightId == id; });
             };
 
-            ExternalZone* zone0 = findZone(0);
-            if (zone0 && !findZone(1)) {
-                ExternalZone zone1 = *zone0;
-                zone1.lightId = 1;
-                zone1.name = defaultZoneName(1);
-                const auto it = std::ranges::find_if(zones,
-                    [](const ExternalZone& z) { return z.lightId == 0; });
-                zones.insert(it + 1, zone1);
+            const auto zone0 = findZone(0);
+            const auto zone1 = findZone(1);
+            if (zone0 != zones.end() && zone1 == zones.end()) {
+                ExternalZone copy = *zone0;
+                copy.lightId = 1;
+                copy.name = defaultZoneName(1);
+                zones.insert(zone0 + 1, copy);
+            } else if (zone1 != zones.end() && zone0 == zones.end()) {
+                ExternalZone copy = *zone1;
+                copy.lightId = 0;
+                copy.name = defaultZoneName(0);
+                zones.insert(zone1, copy);
             }
         }
 
@@ -358,6 +343,8 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
     }
 
     config.activeSchemeName = readString(root, "activeScheme", config.schemes.front().name);
+    if (!config.findScheme(config.activeSchemeName))
+        config.activeSchemeName = config.schemes.front().name;
     config.lightsOn = readBool(root, "lightsOn", true);
     out = std::move(config);
     return true;

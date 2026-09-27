@@ -346,10 +346,44 @@ class TestConfig : public QObject {
         QVERIFY(!parseHex("", parsed));
     }
 
+    // Each solid preset paints the keyboard and every default external zone one colour.
+    void solidPresetsCoverKeyboardAndEveryZone() {
+        const Config config = Config::defaults();
+        for (const char* name : {"Steady blue", "Solid red", "Solid green", "Solid orange",
+                                 "Solid cyan", "Solid pink", "Solid white"}) {
+            const Scheme* scheme = config.findScheme(name);
+            QVERIFY2(scheme != nullptr, name);
+            QCOMPARE(scheme->external.zones.size(), std::size(kDefaultExternalLightIds));
+            for (const ExternalZone& zone : scheme->external.zones)
+                QCOMPARE(zone.color, uniform(scheme->keyboard.color));
+        }
+        QCOMPARE(config.findScheme("Solid white")->keyboard.color, (Rgb{255, 255, 255}));
+        QCOMPARE(config.findScheme("Solid white")->keyboard.brightness,
+                 config.findScheme("Solid red")->keyboard.brightness);
+    }
+
+    // An active name that matches no scheme falls back to the first scheme and is recorded as
+    // active, so the tray checkmark and the scheme list agree with what is painted.
+    void aStaleActiveSchemeNameIsRepairedOnLoad() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        Config config = Config::defaults();
+        config.activeSchemeName = "Gone";
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.error.empty());
+        QCOMPARE(result.config.activeSchemeName, config.schemes.front().name);
+        QCOMPARE(result.config.activeScheme().name, result.config.activeSchemeName);
+    }
+
     // --- migration tests ---
 
     // A v1 config with separate zone 0 and 1 entries keeps them as separate zones after
-    // migration. Zone 0's colour wins; both are renamed to current defaults.
+    // migration, each with its own colour; both are renamed to current defaults.
     void migrationKeepsSeparateRingSegments() {
         Config config;
         config.schemaVersion = 1;
@@ -374,6 +408,7 @@ class TestConfig : public QObject {
         QCOMPARE(ext.zones[0].color.ac, (Rgb{10, 20, 30}));
         QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
         QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[1].color.ac, (Rgb{40, 50, 60}));
         QCOMPARE(ext.zones[2].lightId, std::uint8_t(2));
         QCOMPARE(ext.zones[3].lightId, std::uint8_t(3));
     }

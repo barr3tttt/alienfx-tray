@@ -111,6 +111,12 @@ std::vector<Scheme> builtinSchemes() {
     pink.external = defaultExternalSettings(Rgb{255, 64, 192});
     schemes.push_back(pink);
 
+    Scheme solidWhite;
+    solidWhite.name = "Solid white";
+    solidWhite.keyboard.color = Rgb{255, 255, 255};
+    solidWhite.external = defaultExternalSettings(Rgb{255, 255, 255});
+    schemes.push_back(solidWhite);
+
     // Amber on battery, teal on AC - the split the power-light path gives us for free.
     Scheme battery;
     battery.name = "Amber on battery";
