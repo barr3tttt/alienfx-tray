@@ -101,8 +101,9 @@ for identification.
 IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
 0x5b--0x60 loop, but they produce no visible light on this chassis, so the application does
 not list them as zones. Configs written before schema version 3 are migrated once on load:
-zones 4 and 5 are dropped (schema v1->v2), a rear ring carried as one entry is split into
-two, and existing separate segments keep their own settings (schema v2->v3), and the original file is kept as `config.json.bak`.
+zones 4 and 5 are dropped (v1->v2), a rear ring carried as one entry is split into two
+segments that start with its settings while segments already stored separately keep their
+own (v2->v3), and the original file is kept as `config.json.bak`.
 
 ## Measured latencies
 
@@ -121,8 +122,8 @@ With `ALIENFX_TRAY_TIMING=1`:
 Two consequences shape the design:
 
 - **Send only what changed.** A full repaint of the four default zones is four hardware
-  writes (each zone maps to exactly one hardware ID), 700 ms at 175 ms each, which would put a colour wheel
-  drag visibly behind the cursor. Editing one zone costs one write.
+  writes (each zone maps to exactly one hardware ID), 700 ms at 175 ms each, which would
+  put a colour wheel drag visibly behind the cursor. Editing one zone costs one write.
 - **Different idle timeouts per domain.** Releasing the external controller costs 1600 ms
   to reopen and gains nothing, so it is held for 20 s. The keyboard controller is released
   after 1.5 s, for the reason in the next section.
