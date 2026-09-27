@@ -663,10 +663,54 @@ class TestConfig : public QObject {
         QCOMPARE(zones[3].name, std::string("Lid logo"));
     }
 
+    // The pre-v4 editing model wrote every manual edit straight into the selected scheme,
+    // so a v3 config can hold a built-in whose colours no longer match what it shipped as.
+    // There was no explicit overwrite-save then, so every built-in whose contents differ is
+    // damage, and the migration restores the shipped contents. Schemes with any other name
+    // are the user's own and keep exactly what they say.
+    void migrationRestoresBuiltInContentsButNotUserSchemes() {
+        Config config;
+        config.schemaVersion = 3;
+
+        Scheme mangled;
+        mangled.name = "Cool white";
+        mangled.keyboard.color = Rgb{0, 0, 255};
+        mangled.keyboard.brightness = Brightness::fromPercent(100);
+        mangled.external = defaultExternalSettings(Rgb{1, 2, 3});
+
+        Scheme mine;
+        mine.name = "Mine";
+        mine.keyboard.color = Rgb{9, 9, 9};
+        mine.external = defaultExternalSettings(Rgb{9, 9, 9});
+
+        config.schemes.push_back(mangled);
+        config.schemes.push_back(mine);
+        config.activeSchemeName = "Mine";
+
+        QVERIFY(migrateConfig(config));
+
+        const Scheme* restored = config.findScheme("Cool white");
+        QVERIFY(restored != nullptr);
+        Scheme shipped;
+        bool foundShipped = false;
+        for (const Scheme& builtin : builtinSchemes()) {
+            if (builtin.name == "Cool white") {
+                shipped = builtin;
+                foundShipped = true;
+            }
+        }
+        QVERIFY(foundShipped);
+        QCOMPARE(*restored, shipped);
+
+        const Scheme* userScheme = config.findScheme("Mine");
+        QVERIFY(userScheme != nullptr);
+        QCOMPARE(userScheme->keyboard.color, (Rgb{9, 9, 9}));
+        QCOMPARE(userScheme->external.zones.front().color.ac, (Rgb{9, 9, 9}));
+    }
+
     // Deleting a shipped preset is recorded so it stays deleted. Upgrading the layout of an
     // old config is not a reason to bring it back.
-    void aDeletedBuiltInStaysDeletedThroughMigration() {
-        QTemporaryDir dir;
+    void aDeletedBuiltInStaysDeletedThroughMigration() {        QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const std::filesystem::path path =
             std::filesystem::path(dir.path().toStdString()) / "config.json";

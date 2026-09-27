@@ -63,12 +63,13 @@ void DeviceWorker::setExternalStateSurvivesIdleRelease(bool survives) {
 
 void DeviceWorker::markResumed() { resumed_.store(true); }
 
-quint64 DeviceWorker::submit(const ResolvedScheme& scheme) {
+quint64 DeviceWorker::submit(const ResolvedScheme& scheme, ApplyDepth depth) {
     quint64 generation = 0;
     {
         QMutexLocker locker(&mutex_);
         if (shuttingDown_) return generation_;
         pending_ = scheme;
+        pendingFull_ = pendingFull_ || depth == ApplyDepth::Full;
         generation = ++generation_;
     }
     // One queued wake-up per burst. Everything that arrives before it runs is collapsed into
@@ -83,11 +84,14 @@ void DeviceWorker::processPending() {
 
     std::optional<ResolvedScheme> scheme;
     quint64 generation = 0;
+    bool fullRepaint = false;
     {
         QMutexLocker locker(&mutex_);
         if (shuttingDown_ || !pending_) return;
         scheme = std::move(pending_);
         pending_.reset();
+        fullRepaint = pendingFull_;
+        pendingFull_ = false;
         generation = generation_;
     }
 
@@ -96,7 +100,7 @@ void DeviceWorker::processPending() {
     // Serialise against the `--apply` the resume hook and the login unit both run.
     if (!deviceLock_.held()) {
         if (!deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
-            deferUntilLockFrees(std::move(*scheme), generation);
+            deferUntilLockFrees(std::move(*scheme), generation, fullRepaint);
             return;
         }
         // Whoever held it in between may have painted something else - on resume that is
@@ -105,6 +109,10 @@ void DeviceWorker::processPending() {
         if (deviceLock_.othersHeldSinceLastRelease()) engine_->forgetAppliedState();
     }
     retryDelayMs_ = kInitialRetryDelayMs;
+
+    // A deliberate selection owes the user the whole scheme on the lights, not the delta
+    // against a tracker that may have drifted from what the lights actually show.
+    if (fullRepaint) engine_->forgetAppliedState();
 
     const ApplyResult result =
         resumed_.exchange(false) ? repaintAfterResume(*scheme) : engine_->apply(*scheme);
@@ -133,7 +141,8 @@ ApplyResult DeviceWorker::repaintAfterResume(const ResolvedScheme& scheme) {
     return result;
 }
 
-void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation) {
+void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation,
+                                       bool fullRepaint) {
     const DomainStatus waiting{DeviceState::Waiting,
                                "another alienfx-tray process is applying a scheme"};
     publishStatus(Domain::Keyboard, waiting);
@@ -144,8 +153,10 @@ void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation
         if (shuttingDown_) return;
         // A frame submitted while we were waiting on the lock is newer than this one, and a
         // live preview only ever owes the newest frame. Putting this one back over it would
-        // paint a colour the user has already dragged past.
+        // paint a colour the user has already dragged past. The Full flag is not part of
+        // that trade: it survives into whatever frame does get painted.
         if (!pending_) pending_ = std::move(scheme);
+        pendingFull_ = pendingFull_ || fullRepaint;
     }
 
     if (retryTimer_) retryTimer_->start(retryDelayMs_);
@@ -193,6 +204,7 @@ void DeviceWorker::shutdown() {
         QMutexLocker locker(&mutex_);
         shuttingDown_ = true;
         pending_.reset();
+        pendingFull_ = false;
     }
     if (keyboardIdleTimer_) keyboardIdleTimer_->stop();
     if (externalIdleTimer_) externalIdleTimer_->stop();

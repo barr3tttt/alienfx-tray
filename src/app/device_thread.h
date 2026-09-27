@@ -5,6 +5,7 @@
 #include <chrono>
 
 #include "app/metatypes.h"
+#include "core/lighting_engine.h"
 #include "core/scheme.h"
 
 class QThread;
@@ -36,7 +37,9 @@ class DeviceThread : public QObject {
     DeviceThread& operator=(const DeviceThread&) = delete;
 
     // Returns the generation the caller can expect back from applyFinished. Never blocks.
-    quint64 submit(const ResolvedScheme& scheme);
+    // The depth follows DeviceWorker::submit: Changed for live preview, Full for a
+    // deliberate selection that must repaint every zone.
+    quint64 submit(const ResolvedScheme& scheme, ApplyDepth depth = ApplyDepth::Changed);
 
     // See DeviceWorker. Never block.
     void setExternalStateSurvivesIdleRelease(bool survives);

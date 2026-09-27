@@ -8,6 +8,7 @@
 
 #include "app/metatypes.h"
 #include "core/config.h"
+#include "core/lighting_engine.h"
 #include "core/scheme.h"
 
 class QTimer;
@@ -23,6 +24,14 @@ class DeviceWorker;
 // Nothing here blocks. Every call returns immediately after handing the worker a scheme; the
 // answer arrives later as a signal. A controller that is missing, busy or wedged shows up as
 // a status banner, never as a frozen window.
+//
+// The editing model has exactly one source of truth: the schemes in config_. What the
+// lights show is working_, a draft. previewScheme() repaints the draft and nothing else -
+// it never writes a scheme back, so a colour-wheel drag cannot silently overwrite the
+// selected scheme. The draft becomes permanent only through an explicit gesture:
+// saveWorkingScheme() overwrites the selected scheme with it, saveWorkingSchemeAs() stores
+// it under a new name. Anything that moves the selection - activateScheme(), deleteScheme()
+// - or revertWorkingScheme() discards the draft and repaints the saved scheme in full.
 class LightingController : public QObject {
     Q_OBJECT
 
@@ -36,10 +45,6 @@ class LightingController : public QObject {
 
     ~LightingController() override;
 
-    // Config edits are written back after this much quiet. Applies are immediate; only the
-    // disk write is debounced, so dragging a wheel does not rewrite the file 200 times.
-    static constexpr int kConfigSaveDebounceMs = 1000;
-
     // If an apply has not come back in this long the controller is assumed wedged and the
     // UI is told so. The SDK's APIv4 ready-wait has no timeout of its own.
     static constexpr int kApplyWatchdogMs = 6000;
@@ -50,17 +55,35 @@ class LightingController : public QObject {
     [[nodiscard]] DomainStatus status(Domain domain) const;
     [[nodiscard]] QString configError() const { return configError_; }
 
-    // Applies immediately and schedules a debounced save. This is the live-preview path.
-    void applyWorkingScheme(const Scheme& scheme);
+    // Whether the draft on the lights differs from the selected scheme as saved. While this
+    // is true the UI shows the unsaved-changes indicator, and switching scheme or closing
+    // the panel throws the draft away.
+    [[nodiscard]] bool hasUnsavedChanges() const {
+        return working_ != config_.activeScheme();
+    }
+
+    // Live preview: paints the draft and marks it unsaved. Never touches config_ - the
+    // debounced write-through this used to do is what overwrote the captain's schemes.
+    void previewScheme(const Scheme& scheme);
+
+    // The explicit saves. saveWorkingScheme overwrites the selected scheme with the draft;
+    // saveWorkingSchemeAs stores the draft under a new name and makes that active.
+    void saveWorkingScheme();
+    void saveWorkingSchemeAs(const QString& name);
+
+    // Throws the draft away and repaints the selected scheme. Called when the panel closes
+    // with unsaved changes; switching scheme discards them the same way.
+    void revertWorkingScheme();
 
     void activateScheme(const QString& name);
     void setLightsOn(bool on);
 
-    // Stores the working scheme under a name and makes it active.
-    void saveWorkingSchemeAs(const QString& name);
     void deleteScheme(const QString& name);
 
-    // Re-sends the current state. Used after a device comes back.
+    // Re-sends the current state. Used after a device comes back. Deliberately a Changed
+    // apply rather than a Full one: the engine already forgets what it painted whenever a
+    // device could have been touched elsewhere, so what is left to send here is genuinely
+    // nothing in the steady state, and tests assert that.
     void reapply();
 
     // Whether resumes reach onSystemResumed. Only then may what the external lights were
@@ -70,11 +93,6 @@ class LightingController : public QObject {
     // The machine has come back from suspend: whatever the lights show now is not known to
     // be what was sent, so the current state is repainted in full.
     void onSystemResumed();
-
-    // Writes a debounced edit out now, rather than waiting for the quiet period. The colour
-    // pickers call this when the user lets go, so a drag costs one write at the end instead
-    // of one per settling period.
-    void flushPendingSave();
 
     // Whether a domain last published in this state should be escalated when an apply misses
     // the watchdog deadline. Busy and Waiting are included deliberately: both read as a
@@ -91,13 +109,15 @@ class LightingController : public QObject {
     // A different scheme is now active, or the active one was replaced wholesale. Views
     // reload everything when this fires.
     //
-    // Deliberately NOT emitted by applyWorkingScheme: that path's only caller is the editor
+    // Deliberately NOT emitted by previewScheme: that path's only caller is the editor
     // itself, and echoing an edit straight back at its author rewrites the widget the user
     // is still typing into and rebuilds the tray menu once per colour-wheel frame.
     void schemeChanged();
     void schemeListChanged();
     void lightsOnChanged(bool on);
     void statusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
+    // The draft started or stopped differing from the selected scheme as saved.
+    void unsavedChangesChanged(bool unsaved);
     // The config on disk could not be read, or could not be written back. Separate from
     // statusChanged because it outlives any one device state and has nothing to do with the
     // hardware: the user is running on defaults and their saved schemes are not in play.
@@ -111,14 +131,16 @@ class LightingController : public QObject {
     void onApplyWatchdog();
 
    private:
-    void submitCurrent();
+    void submitCurrent(ApplyDepth depth);
     void armWatchdog();
     void setConfigError(QString error);
+    void updateUnsavedChanges();
     [[nodiscard]] static DomainStatus watchdogStamp();
 
     Config config_;
     Scheme working_;
     QString configError_;
+    bool unsavedChanges_ = false;
 
     DomainStatus keyboardStatus_;
     DomainStatus externalStatus_;
@@ -136,7 +158,6 @@ class LightingController : public QObject {
     QDeadlineTimer resumeWait_{0};
 
     std::unique_ptr<DeviceThread> deviceThread_;
-    QTimer* saveTimer_ = nullptr;
     QTimer* watchdog_ = nullptr;
     bool shutdownDone_ = false;
 };

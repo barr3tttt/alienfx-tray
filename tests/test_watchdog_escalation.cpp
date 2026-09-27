@@ -233,7 +233,7 @@ void TestWatchdogEscalation::editAZoneColour() {
     QVERIFY(!scheme.external.zones.empty());
     scheme.external.zones.front().color = uniform(Rgb{nextZoneColour_, 0, 0});
     nextZoneColour_ = static_cast<std::uint8_t>(nextZoneColour_ + 17);
-    controller_->applyWorkingScheme(scheme);
+    controller_->previewScheme(scheme);
 }
 
 // The case the escalation exists for. Both controllers last reported Busy - the interface

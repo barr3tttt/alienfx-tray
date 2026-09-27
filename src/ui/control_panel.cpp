@@ -83,6 +83,27 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
     tabs->addTab(buildSchemesTab(), tr("Schemes"));
     tabs->setCurrentIndex(0);
 
+    // The editing model, made visible: edits preview on the lights, and only these buttons
+    // make them permanent. The strip sits under every tab because edits happen on all of
+    // them, and it disappears while the draft matches the saved scheme.
+    auto* unsavedRow = new QWidget(this);
+    auto* unsavedLayout = new QHBoxLayout(unsavedRow);
+    unsavedLayout->setContentsMargins(0, 0, 0, 0);
+    unsavedLabel_ = new QLabel(unsavedRow);
+    unsavedLabel_->setObjectName(QStringLiteral("unsavedLabel"));
+    unsavedLabel_->setStyleSheet(QStringLiteral("font-weight: bold;"));
+    saveScheme_ = new QPushButton(tr("Save"), unsavedRow);
+    saveScheme_->setObjectName(QStringLiteral("saveScheme"));
+    saveScheme_->setToolTip(tr("Overwrite the selected scheme with the colours on the "
+                               "lights right now."));
+    revertScheme_ = new QPushButton(tr("Revert"), unsavedRow);
+    revertScheme_->setObjectName(QStringLiteral("revertScheme"));
+    revertScheme_->setToolTip(tr("Throw the unsaved changes away and put the selected "
+                                 "scheme back on the lights."));
+    unsavedLayout->addWidget(unsavedLabel_, 1);
+    unsavedLayout->addWidget(saveScheme_);
+    unsavedLayout->addWidget(revertScheme_);
+
     configStatus_ = new QLabel(this);
     keyboardStatus_ = new QLabel(this);
     externalStatus_ = new QLabel(this);
@@ -97,9 +118,17 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(tabs, 1);
+    layout->addWidget(unsavedRow);
     layout->addWidget(configStatus_);
     layout->addWidget(keyboardStatus_);
     layout->addWidget(externalStatus_);
+
+    connect(saveScheme_, &QPushButton::clicked, this, [this] {
+        controller_.saveWorkingScheme();
+    });
+    connect(revertScheme_, &QPushButton::clicked, this, [this] {
+        controller_.revertWorkingScheme();
+    });
 
     connect(&controller_, &LightingController::statusChanged, this,
             &ControlPanel::onStatusChanged);
@@ -113,12 +142,26 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
             &ControlPanel::refreshSchemeList);
     connect(&controller_, &LightingController::configErrorChanged, this,
             &ControlPanel::onConfigErrorChanged);
+    connect(&controller_, &LightingController::unsavedChangesChanged, this,
+            &ControlPanel::refreshUnsavedStrip);
+    // The strip names the scheme the draft would overwrite, and that name can change
+    // without the dirty state moving (a Save-as, a delete).
+    connect(&controller_, &LightingController::schemeChanged, this,
+            &ControlPanel::refreshUnsavedStrip);
 
     refreshFromController();
     refreshSchemeList();
     refreshStartupIntegration();
+    refreshUnsavedStrip();
     for (Domain domain : kAllDomains) onStatusChanged(domain, controller_.status(domain));
     onConfigErrorChanged(controller_.configError());
+}
+
+void ControlPanel::hideEvent(QHideEvent* event) {
+    // Closing with unsaved edits discards them, the same as switching scheme does. The
+    // preview was only ever a draft on the lights.
+    if (controller_.hasUnsavedChanges()) controller_.revertWorkingScheme();
+    QWidget::hideEvent(event);
 }
 
 // ---------------------------------------------------------------------------- keyboard ---
@@ -128,6 +171,7 @@ QWidget* ControlPanel::buildKeyboardTab() {
     auto* layout = new QVBoxLayout(page);
 
     keyboardColor_ = new ColorPicker(page);
+    keyboardColor_->setObjectName(QStringLiteral("keyboardColor"));
     layout->addWidget(keyboardColor_);
 
     auto* form = new QFormLayout;
@@ -163,8 +207,6 @@ QWidget* ControlPanel::buildKeyboardTab() {
         working_.keyboard.color = toRgb(color);
         pushScheme();
     });
-    connect(keyboardColor_, &ColorPicker::colorCommitted, this,
-            [this] { controller_.flushPendingSave(); });
     connect(keyboardBrightness_, &QSlider::valueChanged, this, [this](int percent) {
         keyboardBrightnessValue_->setText(QStringLiteral("%1%").arg(percent));
         if (loading_) return;
@@ -209,6 +251,7 @@ QWidget* ControlPanel::buildExternalTab() {
 
     auto* right = new QVBoxLayout;
     zoneColor_ = new ColorPicker(page);
+    zoneColor_->setObjectName(QStringLiteral("zoneColor"));
     right->addWidget(new QLabel(tr("On AC power"), page));
     right->addWidget(zoneColor_);
 
@@ -219,6 +262,7 @@ QWidget* ControlPanel::buildExternalTab() {
     right->addWidget(zoneSeparateBattery_);
 
     zoneBatteryColor_ = new ColorPicker(page);
+    zoneBatteryColor_->setObjectName(QStringLiteral("zoneBatteryColor"));
     right->addWidget(zoneBatteryColor_);
     right->addStretch(1);
 
@@ -249,9 +293,6 @@ QWidget* ControlPanel::buildExternalTab() {
         working_.external.zones[static_cast<std::size_t>(index)].color.battery = toRgb(color);
         pushScheme();
     });
-    for (ColorPicker* picker : {zoneColor_, zoneBatteryColor_})
-        connect(picker, &ColorPicker::colorCommitted, this,
-                [this] { controller_.flushPendingSave(); });
     connect(zoneSeparateBattery_, &QCheckBox::toggled, this, [this](bool separate) {
         zoneBatteryColor_->setEnabled(separate);
         if (loading_) return;
@@ -287,11 +328,14 @@ QWidget* ControlPanel::buildSchemesTab() {
     auto* layout = new QVBoxLayout(page);
 
     schemeList_ = new QListWidget(page);
+    schemeList_->setObjectName(QStringLiteral("schemeList"));
     layout->addWidget(schemeList_, 1);
 
     auto* buttons = new QHBoxLayout;
     auto* activate = new QPushButton(tr("Activate"), page);
+    activate->setObjectName(QStringLiteral("activateScheme"));
     auto* saveAs = new QPushButton(tr("Save current as..."), page);
+    saveAs->setObjectName(QStringLiteral("saveSchemeAs"));
     removeScheme_ = new QPushButton(tr("Delete"), page);
     buttons->addWidget(activate);
     buttons->addWidget(saveAs);
@@ -355,7 +399,7 @@ int ControlPanel::selectedZoneIndex() const {
 
 void ControlPanel::pushScheme() {
     if (loading_) return;
-    controller_.applyWorkingScheme(working_);
+    controller_.previewScheme(working_);
 }
 
 void ControlPanel::refreshFromController() {
@@ -453,6 +497,20 @@ void ControlPanel::refreshDeleteButton() {
     removeScheme_->setToolTip(canDelete ? tr("Delete the selected scheme.")
                                         : tr("The last scheme cannot be deleted - there "
                                              "would be nothing left to apply."));
+}
+
+void ControlPanel::refreshUnsavedStrip() {
+    if (!unsavedLabel_) return;
+    const bool unsaved = controller_.hasUnsavedChanges();
+    const QString active = QString::fromStdString(controller_.config().activeSchemeName);
+
+    unsavedLabel_->setText(tr("Unsaved changes to \"%1\"").arg(active));
+    // Hidden, not just disabled, while there is nothing to say: a permanent greyed-out row
+    // reads as a broken button, while a row that only exists mid-draft reads as state.
+    for (QWidget* widget : {static_cast<QWidget*>(unsavedLabel_),
+                            static_cast<QWidget*>(saveScheme_),
+                            static_cast<QWidget*>(revertScheme_)})
+        widget->setVisible(unsaved);
 }
 
 void ControlPanel::refreshActiveSchemeMarker() {

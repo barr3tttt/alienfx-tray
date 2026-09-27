@@ -30,6 +30,12 @@ reason to reboot into Windows.
 - **Zone** - one addressable light on the external controller, identified by its light ID.
   The rear ring hairline LED is two independent zones (IDs 0 and 1).
 - **Scheme** - a named set of colours and brightnesses covering both domains.
+- **Draft** - what the lights currently show, held in `LightingController::working_`. Edits
+  preview the draft and nothing else: a saved scheme changes only through
+  `saveWorkingScheme()` / `saveWorkingSchemeAs()`. Switching scheme or closing the panel
+  reverts the draft. Scheme selection is always a full repaint (`ApplyDepth::Full`) - every
+  zone, every time - while preview frames use the delta path (`ApplyDepth::Changed`) that
+  exists for drag latency.
 
 ## Runtime conventions
 - Build: `cmake -S . -B build -G Ninja && cmake --build build`
@@ -94,9 +100,12 @@ A reboot restores firmware defaults, which is what makes this hardware safe to e
 with. This application never issues the SDK's save-to-device commands at all - login and
 resume repaint anyway, so persistence would buy nothing and cost the safety net.
 
-Older config files are migrated to the current zone layout once on load, keeping the
-original as `config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in
-`src/core/config.cpp`.
+Older config files are migrated to the current schema once on load, keeping the original as
+`config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in `src/core/config.cpp`.
+Schema v4 also restores the shipped contents of built-in-named schemes: the pre-v4 editing
+model wrote every manual edit into the selected scheme, so any built-in whose colours differ
+from what it shipped as is damage from that write-through, and there was no explicit
+overwrite-save that could have made the change deliberate.
 
 ## Lessons (append-only)
 - 2026-09-13: hidapi's libusb backend never re-attaches the kernel driver. Its

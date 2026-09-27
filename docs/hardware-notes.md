@@ -103,7 +103,11 @@ IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
 not list them as zones. Configs written before schema version 3 are migrated once on load:
 zones 4 and 5 are dropped (v1->v2), a rear ring carried as one entry is split into two
 segments that start with its settings while segments already stored separately keep their
-own (v2->v3), and the original file is kept as `config.json.bak`.
+own (v2->v3), and the original file is kept as `config.json.bak`. Configs written before
+schema version 4 additionally have the shipped contents of built-in-named schemes restored
+(v3->v4): the editing model before v4 wrote every manual edit into the selected scheme with
+no save gesture, so a built-in whose colours differ from the shipped ones was damaged by
+that write-through rather than edited on purpose.
 
 ## Measured latencies
 

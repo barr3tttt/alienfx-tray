@@ -29,13 +29,20 @@ target_link_libraries(alienfx_app PUBLIC
 
 target_include_directories(alienfx_app PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
-# The GUI and the headless modes share one binary. `--apply` never constructs a QApplication,
-# so it works from the resume hook, which has no display and no session bus.
-qt_add_executable(alienfx-tray
-  ../main.cpp
+# The widgets, in their own library so the test suite can drive the real control panel
+# offscreen instead of re-testing its logic through the controller and hoping the wiring
+# matches.
+add_library(alienfx_ui STATIC
   ../ui/color_picker.cpp
   ../ui/control_panel.cpp
   ../ui/tray_icon.cpp)
+
+target_link_libraries(alienfx_ui PUBLIC alienfx_app Qt6::Widgets)
+
+# The GUI and the headless modes share one binary. `--apply` never constructs a QApplication,
+# so it works from the resume hook, which has no display and no session bus.
+qt_add_executable(alienfx-tray
+  ../main.cpp)
 
 # Single-source the version string from the project() declaration, and bake in the git
 # revision so --version can answer "what am I running" - a stale install was once
@@ -63,7 +70,7 @@ qt_add_resources(alienfx-tray "app_resources"
   FILES "${CMAKE_SOURCE_DIR}/packaging/alienfx-tray.svg")
 
 target_link_libraries(alienfx-tray PRIVATE
-  alienfx_app
+  alienfx_ui
   Qt6::Widgets
   # Qt6::Svg is not used directly - it provides the image plugin that renders the tray icon.
   Qt6::Svg)

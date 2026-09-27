@@ -276,6 +276,18 @@ bool migrateConfig(Config& config) {
 
     }
 
+    // v3 -> v4: the old editing model wrote every manual edit straight into the selected
+    // scheme, so any built-in whose colours were ever touched no longer matches what it
+    // shipped as. There was no explicit overwrite-save in that model - every change to a
+    // built-in's contents came through the implicit path - so the shipped contents are
+    // restored wholesale. Schemes with other names are the user's own and are left alone,
+    // and the pre-migration file is kept as .bak before the rewrite, as with every bump.
+    if (config.schemaVersion < 4) {
+        for (const Scheme& builtin : builtinSchemes()) {
+            if (Scheme* existing = config.findScheme(builtin.name)) *existing = builtin;
+        }
+    }
+
     config.schemaVersion = Config::kSchemaVersion;
     return true;
 }

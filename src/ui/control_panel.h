@@ -23,8 +23,13 @@ class ColorPicker;
 // The panel behind the tray icon's left click. One tab per lighting domain, because the two
 // controllers really are independent, plus schemes and the login integration.
 //
-// Every widget change goes straight to the controller, which submits it to the device worker
-// and returns immediately. Nothing in here ever waits on USB.
+// Every widget change previews straight on the lights through the controller, which submits
+// to the device worker and returns immediately. Nothing in here ever waits on USB.
+//
+// A preview is a draft, never a write: the saved scheme changes only when the captain
+// presses Save (overwrite the selected scheme) or "Save current as...". While the draft
+// differs from the saved scheme the strip under the tabs says so, and closing the panel -
+// like switching scheme - throws the draft away.
 class ControlPanel : public QWidget {
     Q_OBJECT
 
@@ -33,6 +38,10 @@ class ControlPanel : public QWidget {
 
    public slots:
     void refreshFromController();
+
+   protected:
+    // Closing the panel with unsaved edits reverts the lights to the selected scheme.
+    void hideEvent(QHideEvent* event) override;
 
    private slots:
     void onStatusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
@@ -49,6 +58,7 @@ class ControlPanel : public QWidget {
     void refreshActiveSchemeMarker();
     void refreshDeleteButton();
     void refreshStartupIntegration();
+    void refreshUnsavedStrip();
     [[nodiscard]] int selectedZoneIndex() const;
 
     LightingController& controller_;
@@ -75,6 +85,11 @@ class ControlPanel : public QWidget {
     QPushButton* removeScheme_ = nullptr;
     QLabel* startupStatus_ = nullptr;
     QPushButton* startupToggle_ = nullptr;
+
+    // The unsaved-changes strip between the tabs and the status lines.
+    QLabel* unsavedLabel_ = nullptr;
+    QPushButton* saveScheme_ = nullptr;
+    QPushButton* revertScheme_ = nullptr;
 
     // Status strip
     QLabel* configStatus_ = nullptr;
