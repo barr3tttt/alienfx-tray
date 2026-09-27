@@ -15,7 +15,7 @@ namespace alienfx {
 // persistence in firmware buys nothing and costs the property that makes this hardware safe
 // to experiment with at all - that a reboot always restores the factory default.
 struct Config {
-    static constexpr int kSchemaVersion = 2;
+    static constexpr int kSchemaVersion = 3;
 
     // The version the data was written in. Anything below kSchemaVersion still needs
     // migrateConfig before it matches the current zone layout.

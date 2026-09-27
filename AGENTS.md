@@ -28,7 +28,7 @@ reason to reboot into Windows.
 - **Domain** - one of the two independent lighting controllers. `Keyboard` or `External`.
   They share no command vocabulary and fail independently.
 - **Zone** - one addressable light on the external controller, identified by its light ID.
-  The rear ring is one zone (ID 0) that drives hardware IDs 0 and 1.
+  The rear ring hairline LED is two independent zones (IDs 0 and 1).
 - **Scheme** - a named set of colours and brightnesses covering both domains.
 
 ## Runtime conventions
@@ -46,7 +46,7 @@ written down nowhere else. `docs/hardware-notes.md` has the long form.
 | Device | USB ID | API | Drives |
 |---|---|---|---|
 | Darfon | `0d62:cabc` | AlienFX APIv5, 64-byte feature reports, report ID `0xCC` | the RGB keyboard |
-| Alienware AW-ELC | `187c:0550` | AlienFX APIv4, 33-byte reports, vendor page `0xFF00` | rear ring, lid logo, interior logo |
+| Alienware AW-ELC | `187c:0550` | AlienFX APIv4, 33-byte reports, vendor page `0xFF00` | rear ring (two segments), lid logo, interior logo |
 
 This single fact explains why advice about this laptop contradicts itself. Anything that
 finds one controller and calls it a day gets half the lights.

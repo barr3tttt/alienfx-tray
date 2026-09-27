@@ -76,13 +76,13 @@ struct Scheme {
 // The AW-ELC maps 23 light IDs. Only IDs 0-3 have ever been observed driving a visible
 // light; 6-22 accept commands and do nothing. IDs 4 and 5 accept commands with no visible
 // result, so we leave them alone entirely - the hardware does not need them to produce the
-// visible three zones.
+// visible four zones.
 //
-// IDs 0 and 1 both drive the rear ring, so the UI shows ONE "Rear ring" entry. The lighting
-// engine sends every colour to both IDs together. 6-22 remain reachable through the config
-// file for anyone probing a different chassis.
+// IDs 0 and 1 both drive the rear ring hairline LED. They are independent hardware IDs that
+// each light a different segment of the ring, shown as "Rear ring 1" and "Rear ring 2".
+// 6-22 remain reachable through the config file for anyone probing a different chassis.
 inline constexpr std::uint8_t kExternalLightIdCount = 23;
-inline constexpr std::uint8_t kDefaultExternalLightIds[] = {0, 2, 3};
+inline constexpr std::uint8_t kDefaultExternalLightIds[] = {0, 1, 2, 3};
 
 // The set of hardware light IDs that are known to drive visible lights, used when the probe
 // needs to paint individual IDs for identification rather than the logical zone grouping.
@@ -106,11 +106,12 @@ struct ZoneProfile {
 // Established by lighting each ID on an Alienware m15 R7 AMD and asking the owner what
 // changed. The observations behind each entry are in docs/hardware-notes.md.
 //
-// The three visible zones: Rear ring (hardware IDs 0 and 1, shown as one entry), Interior
-// logo (ID 2), and Lid logo (ID 3). Hardware IDs 4 and 5 light nothing visible and are
-// not listed.
+// The four visible zones: Rear ring hairline LED, two segments (hardware IDs 0 and 1),
+// Interior logo (ID 2), and Lid logo (ID 3). Hardware IDs 4 and 5 light nothing visible
+// and are not listed.
 inline constexpr ZoneProfile kExternalZoneProfiles[] = {
-    {0, "Rear ring", ZoneConfidence::Confirmed},
+    {0, "Rear ring 1", ZoneConfidence::Confirmed},
+    {1, "Rear ring 2", ZoneConfidence::Confirmed},
     {2, "Interior logo", ZoneConfidence::Confirmed},
     {3, "Lid logo", ZoneConfidence::Confirmed},
 };
@@ -121,8 +122,8 @@ inline constexpr ZoneProfile kExternalZoneProfiles[] = {
 // for a settled fact.
 [[nodiscard]] std::string defaultZoneName(std::uint8_t lightId);
 
-// The hardware light IDs a logical zone drives. The rear ring (primary ID 0) maps to
-// hardware IDs {0, 1}; every other zone maps to just its own ID.
+// Each logical zone maps to one hardware light ID. The rear ring segments (IDs 0 and 1) are
+// independent zones with separate hardware IDs.
 [[nodiscard]] std::vector<std::uint8_t> zoneHardwareIds(const ExternalZone& zone);
 
 // The distinct hardware IDs across all zones in a settings set, for the brightness command

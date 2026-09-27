@@ -70,7 +70,10 @@ void LightingController::submitCurrent() {
 void LightingController::applyWorkingScheme(const Scheme& scheme) {
     working_ = scheme;
     config_.upsertScheme(working_);
-    config_.activeSchemeName = working_.name;
+    // Keeping the user's last explicit activation intact: the active scheme only moves when
+    // they deliberately pick it from the tray menu, double-click it in the scheme list, or
+    // click "Activate".  Live-previewing an edit must not silently change which scheme the
+    // tray checkmark and login hook consider active.
     submitCurrent();
     if (saveTimer_) saveTimer_->start();
 }

@@ -87,8 +87,8 @@ only way to learn which ID drives which fixture is to light one and look, so the
 lights IDs 0-3 in four distinct colours and you write down what you see. IDs 4-22 are not
 sent, so they keep whatever they were already showing. Pass a single ID (0-22) to light that
 one white with IDs 0-3 driven black, when a shared colour is ambiguous. The probe addresses
-raw hardware IDs, so the rear ring shows up as two IDs (0 and 1) even though the Zones list
-shows it as one entry.
+raw hardware IDs; the rear ring's two segments are IDs 0 and 1, listed in the Zones tab as
+"Rear ring 1" and "Rear ring 2".
 
 ## Applying at login and after resume
 

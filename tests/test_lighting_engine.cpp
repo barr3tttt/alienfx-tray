@@ -227,8 +227,7 @@ class TestLightingEngine : public QObject {
         QCOMPARE(keyboardView->effectCalls.size(), std::size_t(1));
         QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
 
-        // One zone changed: exactly one hardware ID goes on the wire (Lid logo is a single
-        // hardware ID, unlike the Rear ring which expands to two).
+        // One zone changed: exactly one hardware ID goes on the wire.
         scheme.external.zones[2].color = uniform(Rgb{7, 7, 7});
         engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass + 1);
@@ -317,7 +316,7 @@ class TestLightingEngine : public QObject {
         engine.apply(lit(scheme));
         const std::size_t firstPass = externalView->zoneCalls.size();
 
-        scheme.external.zones.front().name = "Rear ring";
+        scheme.external.zones.front().name = "Custom name";
         engine.apply(lit(scheme));
         QCOMPARE(externalView->zoneCalls.size(), firstPass);
     }
@@ -352,13 +351,12 @@ class TestLightingEngine : public QObject {
         engine.releaseDevices();  // must not crash
     }
 
-    // The rear ring is driven by two hardware IDs (0 and 1) that the UI shows as one zone.
-    // Setting the Rear ring colour must send to both.
-    void rearRingDrivesBothHardwareIds() {
+    // Each logical zone maps to exactly one hardware light ID.
+    void eachZoneDrivesOneHardwareId() {
         Scheme scheme;
         scheme.name = "test";
         scheme.external.zones.push_back(
-            ExternalZone{0, "Rear ring", uniform(Rgb{255, 128, 0})});
+            ExternalZone{2, "Interior logo", uniform(Rgb{255, 128, 0})});
 
         auto keyboard = std::make_unique<FakeKeyboardDevice>();
         auto external = std::make_unique<FakeExternalDevice>();
@@ -367,11 +365,9 @@ class TestLightingEngine : public QObject {
         LightingEngine engine(std::move(keyboard), std::move(external));
         engine.apply(lit(scheme));
 
-        QCOMPARE(externalView->zoneCalls.size(), std::size_t(2));
-        QCOMPARE(externalView->zoneCalls[0].lightId, std::uint8_t(0));
+        QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
+        QCOMPARE(externalView->zoneCalls[0].lightId, std::uint8_t(2));
         QCOMPARE(externalView->zoneCalls[0].acColor, (Rgb{255, 128, 0}));
-        QCOMPARE(externalView->zoneCalls[1].lightId, std::uint8_t(1));
-        QCOMPARE(externalView->zoneCalls[1].acColor, (Rgb{255, 128, 0}));
     }
 
     // Zones 4 and 5 are not in the default scheme because they light nothing.
@@ -381,7 +377,76 @@ class TestLightingEngine : public QObject {
             QVERIFY2(zone.lightId != 4 && zone.lightId != 5,
                      "zones 4 and 5 must not appear in the default scheme");
         }
-        QCOMPARE(scheme.external.zones.size(), std::size_t(3));
+        QCOMPARE(scheme.external.zones.size(), std::size_t(4));
+    }
+
+    // Switching schemes with completely different per-zone colours must update every
+    // hardware light and must not be skipped by the delta-optimisation.
+    void switchingSchemesSendsAllChangedZones() {
+        Scheme schemeA;
+        schemeA.name = "A";
+        schemeA.external.zones.push_back(
+            ExternalZone{0, "Rear ring 1", uniform(Rgb{255, 0, 0})});
+        schemeA.external.zones.push_back(
+            ExternalZone{1, "Rear ring 2", uniform(Rgb{0, 255, 0})});
+        schemeA.external.zones.push_back(
+            ExternalZone{2, "Interior logo", uniform(Rgb{0, 0, 255})});
+
+        Scheme schemeB;
+        schemeB.name = "B";
+        schemeB.external.zones.push_back(
+            ExternalZone{0, "Rear ring 1", uniform(Rgb{128, 128, 128})});
+        schemeB.external.zones.push_back(
+            ExternalZone{1, "Rear ring 2", uniform(Rgb{64, 64, 64})});
+        schemeB.external.zones.push_back(
+            ExternalZone{2, "Interior logo", uniform(Rgb{255, 255, 255})});
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(schemeA));
+        const std::size_t afterA = externalView->zoneCalls.size();
+        QCOMPARE(afterA, collectHardwareIds(schemeA.external).size());
+
+        // All three zones have different colours between A and B -- every one should be sent.
+        engine.apply(lit(schemeB));
+        QCOMPARE(externalView->zoneCalls.size(), afterA + collectHardwareIds(schemeB.external).size());
+    }
+
+    // Scheme switching where a zone happens to carry the same colour as before must
+    // skip that zone, not re-send it.
+    void unchangedZonesAcrossSchemesAreSkipped() {
+        Scheme schemeA;
+        schemeA.name = "A";
+        schemeA.external.zones.push_back(
+            ExternalZone{0, "Rear ring 1", uniform(Rgb{100, 100, 100})});
+        schemeA.external.zones.push_back(
+            ExternalZone{2, "Interior logo", uniform(Rgb{0, 0, 255})});
+
+        Scheme schemeB;
+        schemeB.name = "B";
+        // Same colour as scheme A for this zone -- should be skipped.
+        schemeB.external.zones.push_back(
+            ExternalZone{0, "Rear ring 1", uniform(Rgb{100, 100, 100})});
+        // Different colour -- should be sent.
+        schemeB.external.zones.push_back(
+            ExternalZone{2, "Interior logo", uniform(Rgb{255, 0, 0})});
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(schemeA));
+        const std::size_t afterA = externalView->zoneCalls.size();
+
+        engine.apply(lit(schemeB));
+        // Only one changed zone (lightId 2) goes on the wire.
+        QCOMPARE(externalView->zoneCalls.size(), afterA + 1);
+        QCOMPARE(externalView->zoneCalls.back().lightId, std::uint8_t(2));
+        QCOMPARE(externalView->zoneCalls.back().acColor, (Rgb{255, 0, 0}));
     }
 };
 
