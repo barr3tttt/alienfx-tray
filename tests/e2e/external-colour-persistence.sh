@@ -4,8 +4,11 @@
 # Applies a scheme with two distinct external zone colours and checks, through the
 # ALIENFX_TRAY_TIMING breakdown, that the test scheme was the one loaded (exactly its two
 # zones were written, not the built-in defaults) and that the external commit ran and
-# succeeded. This test cannot see the lights, so it does not prove the colours persist:
-# that needs a person looking at the laptop, and the script says what to look for.
+# succeeded. A fresh process does not know what an earlier session painted, so the two
+# visible lights the scheme leaves out (the rear ring, IDs 0 and 1) are driven off first:
+# those writes come before the brightness command, the scheme's own zones after it. This
+# test cannot see the lights, so it does not prove the colours persist: that needs a person
+# looking at the laptop, and the script says what to look for.
 #
 # Before the fix in SdkExternalDevice::commit() the commit was a no-op because the SDK's
 # inSet flag was false after SetPowerAction, so nothing ever sent a "finish and play"
@@ -72,18 +75,24 @@ status=$?
 
 count_lines() { grep -c -- "$2" <<<"$1"; }
 
-# Exactly the test scheme's zones, then one commit, and nothing reported as refused.
+# The two left-out ring lights driven off, then the brightness command, then exactly the
+# test scheme's zones, then one commit, and nothing reported as refused. The built-in
+# defaults carry all four visible lights, so they would show no writes before brightness
+# and four after it.
 check_apply() {
-  local label="$1" output="$2" zones
-  zones="$(count_lines "$output" 'external/applyZone')"
-  if [[ "$zones" -ne 2 ]]; then
-    fail "$label: expected 2 external zone writes from the test scheme, saw $zones"
+  local label="$1" output="$2" before after
+  before="$(sed -n '/external\/setBrightness/q;/external\/applyZone/p' <<<"$output" | wc -l)"
+  after="$(sed -n '/external\/setBrightness/,$p' <<<"$output" | grep -c -- 'external/applyZone')"
+  if [[ "$before" -ne 2 ]]; then
+    fail "$label: expected the 2 left-out ring lights driven off before brightness, saw $before"
+  elif [[ "$after" -ne 2 ]]; then
+    fail "$label: expected 2 external zone writes from the test scheme, saw $after"
   elif [[ "$(count_lines "$output" 'external/commit')" -ne 1 ]]; then
     fail "$label: external commit did not run exactly once"
   elif [[ "$output" == *"refused"* ]]; then
     fail "$label: a controller refused a command"
   else
-    pass "$label: both test zones written and the external commit succeeded"
+    pass "$label: left-out lights driven off, both test zones written, commit succeeded"
   fi
 }
 
