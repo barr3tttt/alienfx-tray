@@ -107,26 +107,33 @@ own (v2->v3), and the original file is kept as `config.json.bak`.
 
 ## Measured latencies
 
-With `ALIENFX_TRAY_TIMING=1`:
+With `ALIENFX_TRAY_TIMING=1`, measured 2026-09-27 on this laptop across three cold
+`--apply` runs (each opens, paints, closes):
 
 | Operation | Time |
 |---|---|
-| keyboard open (find path, probe, claim) | ~40 ms |
+| keyboard open (find path, probe, claim) | ~110-130 ms |
 | keyboard brightness | ~20 ms |
 | keyboard colour | ~20 ms |
+| keyboard close (incl. driver reattach) | ~100 ms |
 | external open | ~45 ms |
 | external brightness | ~3 ms |
-| external zone write, **first after open** | ~1600 ms |
-| external zone write, subsequent | ~175 ms |
+| external zone write | ~110-140 ms |
+| external commit (Reset + UpdateColors) | ~15 ms |
 
-Two consequences shape the design:
+An earlier revision of this table recorded ~175 ms per external zone write and a ~1600 ms
+first write after every open. Neither reproduces now: the first write after an open costs
+the same ~110-140 ms as every later one. The two design decisions those numbers drove
+still stand:
 
 - **Send only what changed.** A full repaint of the four default zones is four hardware
-  writes (each zone maps to exactly one hardware ID), 700 ms at 175 ms each, which would
-  put a colour wheel drag visibly behind the cursor. Editing one zone costs one write.
-- **Different idle timeouts per domain.** Releasing the external controller costs 1600 ms
-  to reopen and gains nothing, so it is held for 20 s. The keyboard controller is released
-  after 1.5 s, for the reason in the next section.
+  writes plus a commit, about 500 ms at the measured rates, which would put a colour wheel
+  drag visibly behind the cursor. Editing one zone costs one write.
+- **Different idle timeouts per domain.** Releasing the keyboard controller quickly is
+  worth real money: it is the interface the user types on, and every claim steals it from
+  usbhid. Releasing the external controller buys nothing - nothing else wants it, no input
+  device is affected, and reopening still costs a round of enumeration - so it is held for
+  20 s while the keyboard is given back after 1.5 s.
 
 For comparison, driving six zones through six `alienfx-cli` invocations takes
 about 11.6 s, because each process pays full USB enumeration. Linking the SDK rather than

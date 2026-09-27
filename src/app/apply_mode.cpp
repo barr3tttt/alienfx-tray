@@ -17,11 +17,6 @@
 namespace alienfx {
 namespace {
 
-// The controllers are not necessarily enumerable the instant a user session starts or a
-// machine comes back from suspend. The script this replaces polled for ten seconds; so do we.
-constexpr auto kDeviceWaitTimeout = std::chrono::seconds(10);
-constexpr auto kDeviceRetryInterval = std::chrono::milliseconds(500);
-
 // See app/apply_mode.h - these are read by the login unit and the resume hook.
 constexpr int kExitApplied = 0;
 constexpr int kExitNothingApplied = 1;
@@ -94,8 +89,8 @@ bool mightStillComeGood(DeviceState state) {
             return false;
         case DeviceState::Waiting:
         case DeviceState::Unresponsive:
-            // Neither is reachable here: both are produced by the tray, and this poll runs
-            // only in the headless modes, which hold the device lock for their whole run.
+            // Neither is reachable here: both are produced above the engine, by the tray's
+            // worker and controller, never by the engine this poll drives.
             return false;
     }
     std::unreachable();
@@ -164,6 +159,8 @@ int runApplyMode(std::ostream& out, std::ostream& err,
 
 int runOffMode(std::ostream& out, std::ostream& err, std::chrono::milliseconds lockTimeout) {
     LoadResult loaded = loadConfig(configPath());
+    if (!loaded.error.empty())
+        err << "alienfx-tray: " << loaded.error << " - using defaults\n";
     LightingState state = loaded.config.lightingState();
     state.lightsOn = false;
     return applyWithRetry(resolveOutput(state), kOffStandDown, lockTimeout, out, err).exitCode;
@@ -207,7 +204,7 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
             out << "  ID " << static_cast<int>(entry.id) << "  " << entry.name << "\n";
         out << "\nIDs 0 and 1 both drive the rear ring - you should see two colours on the "
                "ring.\n"
-               "IDs 4 and up  not sent, so they keep whatever they were already showing\n\n"
+               "IDs 4 and up are not sent, so they keep whatever they were already showing\n\n"
                "If two zones report the same colour, or one zone reports two colours, rerun\n"
                "with a single ID to remove the ambiguity:  --probe-external=1\n\n";
     }

@@ -24,11 +24,11 @@ class UsbContext;
 //
 // Two properties matter more than anything else here:
 //
-//  * Latest-wins coalescing. A full external apply is around 36 HID exchanges - the APIv4
-//    power path walks cid 0x5b..0x60 for each light - so 50-100ms for six zones. A colour
-//    wheel drag produces far more frames than that. Queuing them would leave the lights
-//    seconds behind the cursor, so intermediate frames are dropped and only the newest
-//    scheme is ever applied.
+//  * Latest-wins coalescing. A full external apply walks cid 0x5b..0x60 on the APIv4 power
+//    path for each light - about 110-140 ms per zone, so roughly half a second for the four
+//    default zones. A colour wheel drag produces far more frames than that. Queuing them
+//    would leave the lights seconds behind the cursor, so intermediate frames are dropped
+//    and only the newest scheme is ever applied.
 //
 //  * Short claims. Claiming the keyboard controller detaches usbhid from the interface the
 //    user types on. Handles are opened on demand and released after a short idle period, so
@@ -45,12 +45,12 @@ class DeviceWorker : public QObject {
     //
     // Claiming the keyboard controller detaches usbhid from the interface the user types on -
     // it is the built-in keyboard, and there is no separate LED interface - so the claim goes
-    // back almost immediately. Re-opening it is cheap: about 40 ms, and the first colour set
-    // after that is another 20 ms.
+    // back almost immediately. Re-opening it costs about 110-130 ms, and a colour set after
+    // that is another 20 ms.
     //
-    // The external controller costs about 1.6 s for the first write after every open, and
-    // 175 ms for each one after that. Nothing else on the system wants it and no input device
-    // is affected, so releasing it eagerly would buy nothing and charge 1.6 s for it.
+    // The external controller costs about 45 ms to open and 110-140 ms per zone write. Nothing
+    // else on the system wants it and no input device is affected, so releasing it eagerly
+    // would buy nothing and charge the reopen for it.
     static constexpr int kKeyboardIdleReleaseMs = 1500;
     static constexpr int kExternalIdleReleaseMs = 20000;
 
@@ -69,6 +69,20 @@ class DeviceWorker : public QObject {
     // Callable from any thread. Replaces whatever was pending and returns the generation
     // the caller can expect back from applyFinished, so a superseded apply is recognisable.
     quint64 submit(const ResolvedScheme& scheme);
+
+    // Callable from any thread. Whether what the external lights were last sent may be
+    // trusted across the idle release. Releasing the handle changes nothing they show, but
+    // a suspend can, so this is only safe while something reports resumes - otherwise every
+    // idle release forgets it and the next apply repaints the lot. Off until told otherwise.
+    void setExternalStateSurvivesIdleRelease(bool survives);
+
+    // Callable from any thread. The machine has resumed: neither controller may still show
+    // what it was sent - and the keyboard can still be inside its idle window from before the
+    // suspend - nor be enumerable yet. The next apply drops any handle kept across the
+    // suspend, forgets what it painted, and waits for the controllers the way --apply does
+    // (applyDomainsWithRetry, up to kDeviceWaitTimeout) before giving up on either. Takes
+    // effect before whatever is applied next, including a scheme already pending.
+    void markResumed();
 
    public slots:
     // Runs on the worker thread once it starts.
@@ -90,6 +104,9 @@ class DeviceWorker : public QObject {
     // must not happen on the GUI thread. Overridden in tests to stand in for hardware.
     virtual DeviceSet createDevices();
 
+    // The idle release delays. Overridden in tests so a release can be waited for.
+    [[nodiscard]] virtual int idleReleaseMs(Domain domain) const;
+
    private slots:
     void processPending();
     void releaseIdleKeyboard();
@@ -99,6 +116,7 @@ class DeviceWorker : public QObject {
     void publishStatus(Domain domain, const DomainStatus& status);
     void deferUntilLockFrees(ResolvedScheme scheme, quint64 generation);
     void releaseIdle(Domain domain);
+    ApplyResult repaintAfterResume(const ResolvedScheme& scheme);
     // The lock is only meaningful while a handle is open, so it goes back with the last one.
     void releaseLockIfIdle();
 
@@ -114,6 +132,8 @@ class DeviceWorker : public QObject {
     std::optional<ResolvedScheme> pending_;
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
+    std::atomic<bool> externalStateSurvivesIdleRelease_{false};
+    std::atomic<bool> resumed_{false};
     bool shuttingDown_ = false;
 
     DomainStatus lastKeyboardStatus_;

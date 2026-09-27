@@ -50,8 +50,11 @@ class Brightness {
 
     [[nodiscard]] constexpr std::uint8_t value() const { return value_; }
 
-    // 1..100, the unit the UI slider works in.
-    [[nodiscard]] constexpr int percent() const { return (value_ * 100 + kMax / 2) / kMax; }
+    // 1..100, the unit the UI slider works in. Clamped to the same range fromPercent
+    // accepts, so the minimum brightness cannot display as 0% while the slider's floor is 1.
+    [[nodiscard]] constexpr int percent() const {
+        return std::clamp((value_ * 100 + kMax / 2) / kMax, 1, 100);
+    }
     [[nodiscard]] static constexpr Brightness fromPercent(int percent) {
         return Brightness((std::clamp(percent, 1, 100) * kMax + 50) / 100);
     }

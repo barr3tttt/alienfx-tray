@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 namespace alienfx {
@@ -30,11 +32,26 @@ class ProcessLock {
 
     [[nodiscard]] bool held() const { return fd_ >= 0; }
 
+    // Whether another holder may have had the lock between this object's last release and its
+    // latest acquire. Every acquire bumps a counter kept in the lock file, so a count that
+    // moved on while we were away means someone else - the resume hook, the login unit, a
+    // manual --apply - claimed the devices and may have painted them. True on the first
+    // acquire and whenever the counter could not be read or written, because then nothing is
+    // known. When the lock file cannot be opened at all, acquire() carries on unserialised;
+    // that is reported true once, on the way into that state, and not on every acquire made
+    // while it lasts.
+    [[nodiscard]] bool othersHeldSinceLastRelease() const { return othersHeld_; }
+
     // $XDG_RUNTIME_DIR/alienfx-tray.lock, falling back to a temp directory.
     [[nodiscard]] static std::filesystem::path lockPath();
 
    private:
+    void recordAcquire();
+
     int fd_ = -1;
+    std::optional<std::uint64_t> lastCount_;
+    bool othersHeld_ = true;
+    bool unserialised_ = false;
 };
 
 }  // namespace alienfx

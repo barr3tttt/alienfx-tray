@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Network Widgets Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Network Widgets Svg)
 
 qt_standard_project_setup()
 
@@ -15,11 +15,14 @@ add_library(alienfx_app STATIC
   process_lock.cpp
   signal_handler.cpp
   single_instance.cpp
+  sleep_monitor.cpp
   startup_integration.cpp)
 
 target_link_libraries(alienfx_app PUBLIC
   alienfx_device
   Qt6::Core
+  # logind's PrepareForSleep, so the tray notices a resume on its own.
+  Qt6::DBus
   # QLocalServer/QLocalSocket, for the single-instance guard. Two tray processes fighting
   # over one USB interface is exactly the failure that leaves a keyboard claimed.
   Qt6::Network)
@@ -33,6 +36,26 @@ qt_add_executable(alienfx-tray
   ../ui/color_picker.cpp
   ../ui/control_panel.cpp
   ../ui/tray_icon.cpp)
+
+# Single-source the version string from the project() declaration, and bake in the git
+# revision so --version can answer "what am I running" - a stale install was once
+# indistinguishable from a current one, and the difference mattered. The revision is looked
+# up on every build rather than at configure time; see cmake/GitRevision.cmake.
+find_package(Git QUIET)
+set(ALIENFX_GIT_REVISION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/git_revision.h")
+add_custom_target(alienfx_git_revision
+  COMMAND ${CMAKE_COMMAND}
+    -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+    -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DOUTPUT=${ALIENFX_GIT_REVISION_HEADER}
+    -P ${CMAKE_SOURCE_DIR}/cmake/GitRevision.cmake
+  BYPRODUCTS ${ALIENFX_GIT_REVISION_HEADER}
+  COMMENT "Recording the git revision"
+  VERBATIM)
+add_dependencies(alienfx-tray alienfx_git_revision)
+target_include_directories(alienfx-tray PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
+target_compile_definitions(alienfx-tray PRIVATE
+  ALIENFX_TRAY_VERSION="${PROJECT_VERSION}")
 
 qt_add_resources(alienfx-tray "app_resources"
   PREFIX "/icons"

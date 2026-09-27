@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <utility>
 
+#include "app/apply_mode.h"
 #include "device/device_factory.h"
 #include "device/usb_context.h"
 
@@ -35,12 +37,12 @@ void DeviceWorker::initialise() {
 
     keyboardIdleTimer_ = new QTimer(this);
     keyboardIdleTimer_->setSingleShot(true);
-    keyboardIdleTimer_->setInterval(kKeyboardIdleReleaseMs);
+    keyboardIdleTimer_->setInterval(idleReleaseMs(Domain::Keyboard));
     connect(keyboardIdleTimer_, &QTimer::timeout, this, &DeviceWorker::releaseIdleKeyboard);
 
     externalIdleTimer_ = new QTimer(this);
     externalIdleTimer_->setSingleShot(true);
-    externalIdleTimer_->setInterval(kExternalIdleReleaseMs);
+    externalIdleTimer_->setInterval(idleReleaseMs(Domain::External));
     connect(externalIdleTimer_, &QTimer::timeout, this, &DeviceWorker::releaseIdleExternal);
 
     retryTimer_ = new QTimer(this);
@@ -50,6 +52,16 @@ void DeviceWorker::initialise() {
     // Something may already have been submitted while the thread was starting.
     QMetaObject::invokeMethod(this, &DeviceWorker::processPending, Qt::QueuedConnection);
 }
+
+int DeviceWorker::idleReleaseMs(Domain domain) const {
+    return domain == Domain::Keyboard ? kKeyboardIdleReleaseMs : kExternalIdleReleaseMs;
+}
+
+void DeviceWorker::setExternalStateSurvivesIdleRelease(bool survives) {
+    externalStateSurvivesIdleRelease_.store(survives);
+}
+
+void DeviceWorker::markResumed() { resumed_.store(true); }
 
 quint64 DeviceWorker::submit(const ResolvedScheme& scheme) {
     quint64 generation = 0;
@@ -82,14 +94,20 @@ void DeviceWorker::processPending() {
     if (!engine_) return;
 
     // Serialise against the `--apply` the resume hook and the login unit both run.
-    if (!deviceLock_.held() &&
-        !deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
-        deferUntilLockFrees(std::move(*scheme), generation);
-        return;
+    if (!deviceLock_.held()) {
+        if (!deviceLock_.acquire(std::chrono::milliseconds(kLockTimeoutMs))) {
+            deferUntilLockFrees(std::move(*scheme), generation);
+            return;
+        }
+        // Whoever held it in between may have painted something else - on resume that is
+        // the hook repainting the saved scheme - so nothing the engine remembers from before
+        // can be trusted.
+        if (deviceLock_.othersHeldSinceLastRelease()) engine_->forgetAppliedState();
     }
     retryDelayMs_ = kInitialRetryDelayMs;
 
-    const ApplyResult result = engine_->apply(*scheme);
+    const ApplyResult result =
+        resumed_.exchange(false) ? repaintAfterResume(*scheme) : engine_->apply(*scheme);
 
     publishStatus(Domain::Keyboard, result.keyboard);
     publishStatus(Domain::External, result.external);
@@ -98,6 +116,21 @@ void DeviceWorker::processPending() {
     if (externalIdleTimer_) externalIdleTimer_->start();
 
     emit applyFinished(generation, result.allOk());
+}
+
+ApplyResult DeviceWorker::repaintAfterResume(const ResolvedScheme& scheme) {
+    engine_->releaseDevices();
+    engine_->forgetAppliedState();
+
+    const ApplyResult result = applyDomainsWithRetry(*engine_, scheme, kDeviceWaitTimeout,
+                                                     kDeviceRetryInterval, std::cerr);
+    for (Domain domain : kAllDomains) {
+        const DomainStatus& status = result.forDomain(domain);
+        if (!status.ok())
+            qWarning("alienfx-tray: not repainted after resume: %s",
+                     describe(domain, status).c_str());
+    }
+    return result;
 }
 
 void DeviceWorker::deferUntilLockFrees(ResolvedScheme scheme, quint64 generation) {
@@ -136,6 +169,8 @@ void DeviceWorker::releaseIdleExternal() { releaseIdle(Domain::External); }
 void DeviceWorker::releaseIdle(Domain domain) {
     if (engine_) {
         engine_->releaseDevice(domain);
+        if (domain == Domain::External && !externalStateSurvivesIdleRelease_.load())
+            engine_->forgetAppliedState(Domain::External);
 
         // Closing is where the kernel driver goes back, and that can fail on its own. No
         // lighting command ran, so the last published state stands and only the warning

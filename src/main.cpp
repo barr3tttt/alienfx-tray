@@ -10,15 +10,32 @@
 #include "app/lighting_controller.h"
 #include "app/metatypes.h"
 #include "app/signal_handler.h"
+#include "app/sleep_monitor.h"
 #include "app/single_instance.h"
 #include "ui/tray_icon.h"
 
 namespace {
 
-constexpr const char* kVersion = "0.1.0";
+// The version comes from the CMake project() declaration and the git revision the binary
+// was built from, so --version answers "what am I running" in one line. Both are supplied
+// by the build, the revision through a header regenerated on every build; the fallbacks
+// cover a build outside CMake or outside a checkout.
+#if __has_include("git_revision.h")
+#include "git_revision.h"
+#endif
+#ifndef ALIENFX_TRAY_VERSION
+#define ALIENFX_TRAY_VERSION "0.0.0"
+#endif
+#ifndef ALIENFX_TRAY_GIT_SHA
+#define ALIENFX_TRAY_GIT_SHA "unknown"
+#endif
+
+constexpr const char* kVersion = ALIENFX_TRAY_VERSION;
+constexpr const char* kGitSha = ALIENFX_TRAY_GIT_SHA;
 
 void printUsage(std::ostream& out) {
-    out << "alienfx-tray " << kVersion << " - RGB lighting for Alienware laptops on Linux\n"
+    out << "alienfx-tray " << kVersion << " (" << kGitSha
+        << ") - RGB lighting for Alienware laptops on Linux\n"
         << "\n"
         << "Usage:\n"
         << "  alienfx-tray                    run the tray icon\n"
@@ -46,7 +63,7 @@ int main(int argc, char* argv[]) {
             printUsage(std::cout);
             return 0;
         case alienfx::CliMode::Version:
-            std::cout << kVersion << "\n";
+            std::cout << kVersion << " (" << kGitSha << ")\n";
             return 0;
         case alienfx::CliMode::Apply:
             return alienfx::runApplyMode(std::cout, std::cerr);
@@ -80,6 +97,11 @@ int main(int argc, char* argv[]) {
 
     alienfx::LightingController controller;
     alienfx::ui::TrayIcon tray(controller);
+
+    alienfx::SleepMonitor sleepMonitor;
+    controller.setResumeWatched(sleepMonitor.watching());
+    QObject::connect(&sleepMonitor, &alienfx::SleepMonitor::resumed, &controller,
+                     &alienfx::LightingController::onSystemResumed);
 
     QObject::connect(&instance, &alienfx::SingleInstance::raiseRequested, &tray,
                      &alienfx::ui::TrayIcon::togglePanel);

@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Network Test)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Network Test)
 
 qt_standard_project_setup()
 

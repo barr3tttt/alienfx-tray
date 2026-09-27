@@ -63,7 +63,105 @@ class TestConfig : public QObject {
         QCOMPARE(pair.effectiveBattery(), (Rgb{200, 100, 50}));
     }
 
-    // A config nobody can parse must still leave the user with working lights.
+    // The first save after a fallback replaces the file, so the unreadable original has to
+    // be kept before that can happen - a file a human just broke is the one they want back.
+    // It is kept beside the .bak, never over it: that may hold the pre-migration original.
+    void anUnparseableFileIsKeptBeforeDefaultsTakeOver() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path root(dir.path().toStdString());
+        const std::filesystem::path path = root / "config.json";
+        const std::string original = "the pre-migration original";
+        writeAll(path.string() + ".bak", original);
+        const std::string broken = "{ this is not json";
+        writeAll(path, broken);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.fileExisted);
+        QVERIFY(!result.error.empty());
+        QCOMPARE(readAll(path.string() + ".bak"), original);
+
+        std::vector<std::filesystem::path> kept;
+        for (const auto& entry : std::filesystem::directory_iterator(root))
+            if (entry.path().filename().string().starts_with("config.json.corrupt-"))
+                kept.push_back(entry.path());
+        QCOMPARE(kept.size(), std::size_t(1));
+        QCOMPARE(readAll(kept.front()), broken);
+        QVERIFY2(result.error.find(kept.front().string()) != std::string::npos,
+                 result.error.c_str());
+
+        // Login and resume load the file again; the same broken text is not kept twice.
+        (void)loadConfig(path);
+        std::size_t copies = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(root))
+            if (entry.path().filename().string().starts_with("config.json.corrupt-")) ++copies;
+        QCOMPARE(copies, std::size_t(1));
+    }
+
+    void theCorruptCopyIsNamedForTheUtcTimeOfTheLoad() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+
+        // 2026-09-26 12:34:56 UTC.
+        const auto when = std::chrono::system_clock::from_time_t(1790426096);
+        const auto kept = preserveCorruptConfig(path, "{", when);
+        QVERIFY(kept);
+        QCOMPARE(kept->filename().string(), std::string("config.json.corrupt-20260926T123456Z"));
+        QCOMPARE(readAll(*kept), std::string("{"));
+    }
+
+    // If the copy cannot be written, the next save will replace the only copy of the file,
+    // so the load has to say so rather than fall back quietly.
+    void aFailedCorruptCopyIsReported() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path root(dir.path().toStdString());
+        const std::filesystem::path path = root / "config.json";
+        writeAll(path, "{ this is not json");
+
+        std::filesystem::permissions(root, std::filesystem::perms::owner_read |
+                                               std::filesystem::perms::owner_exec);
+        const bool writable = static_cast<bool>(std::ofstream(root / "probe"));
+        if (writable) {
+            std::filesystem::permissions(root, std::filesystem::perms::owner_all);
+            QSKIP("directory permissions are not enforced for this user");
+        }
+        const LoadResult result = loadConfig(path);
+        std::filesystem::permissions(root, std::filesystem::perms::owner_all);
+
+        QVERIFY(result.fileExisted);
+        QVERIFY2(result.error.find("failed") != std::string::npos, result.error.c_str());
+        QVERIFY2(result.error.find("next save will replace") != std::string::npos,
+                 result.error.c_str());
+    }
+
+    // A light ID is a zone's identity, so a repeat is dropped at load at every schema - a
+    // current-schema file is never migrated, and hand-edits happen at any version.
+    void duplicateZonesAreDroppedAtEverySchema() {
+        const std::string head = R"({"schemaVersion": )";
+        const std::string tail = R"(,
+          "activeScheme": "test",
+          "schemes": [{"name": "test", "external": {"zones": [
+            {"id": 0, "name": "Rear ring 1", "color": "#0a141e"},
+            {"id": 1, "name": "Rear ring 2", "color": "#28323c"},
+            {"id": 0, "name": "hand-added duplicate", "color": "#010203"}
+          ]}}]
+        })";
+        for (const char* version : {"2", "3"}) {
+            const std::string text = head + version + tail;
+            Config parsed;
+            std::string error;
+            QVERIFY2(deserializeConfig(text, parsed, error), error.c_str());
+            const auto& zones = parsed.findScheme("test")->external.zones;
+            QCOMPARE(zones.size(), std::size_t(2));
+            QCOMPARE(zones[0].lightId, std::uint8_t(0));
+            QCOMPARE(zones[0].color.ac, (Rgb{10, 20, 30}));
+            QCOMPARE(zones[1].lightId, std::uint8_t(1));
+        }
+    }
+
     void anUnparseableFileFallsBackToDefaults() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());

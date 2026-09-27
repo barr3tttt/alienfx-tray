@@ -145,6 +145,16 @@ class TestEffectGuard : public QObject {
         }
         for (int raw = -50; raw <= 400; ++raw)
             QVERIFY(Brightness(raw).value() >= Brightness::kMin);
+
+        // The display side of the same floor: the slider's range starts at 1%, so the
+        // minimum brightness must not read back as 0.
+        for (int raw = 0; raw <= 0xff; ++raw) {
+            const int percent = Brightness(raw).percent();
+            QVERIFY2(percent >= 1 && percent <= 100,
+                     qPrintable(QStringLiteral("percent %1 out of range for raw %2")
+                                    .arg(percent)
+                                    .arg(raw)));
+        }
     }
 };
 

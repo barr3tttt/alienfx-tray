@@ -38,6 +38,18 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix ~/.local
 ```
 
+`cmake --install` compares timestamps, not contents: a rebuild that lands in the same
+minute as the installed copy is reported as `Up-to-date` and silently not copied. When it
+matters that the install is current, byte-compare afterwards:
+
+```sh
+cmp build/alienfx-tray ~/.local/bin/alienfx-tray && echo current
+```
+
+`alienfx-tray --version` prints the version and the git revision it was built from, marked
+`-dirty` when tracked files had uncommitted changes, so "which build is this" is answerable
+without comparing anything. The revision is read on every build, not only at configure time.
+
 On Fedora the build dependencies are `qt6-qtbase-devel qt6-qtsvg-devel cmake ninja-build
 gcc-c++`. On Debian and Ubuntu they are `qt6-base-dev qt6-svg-dev cmake ninja-build g++`.
 
@@ -96,6 +108,10 @@ This ships no startup mechanism of its own. If you already have a user unit and 
 system-sleep hook calling `~/.local/bin/alienfx-apply` - the usual arrangement for this
 hardware - the Schemes tab has a button that makes that one script delegate here, backing
 up whatever was there first. The unit and the hook are not touched.
+
+A running tray also repaints on its own after a resume, listening for logind's
+`PrepareForSleep` on the system bus and waiting up to 10 seconds for the controllers to
+re-enumerate, so the hook is what covers the case where the tray is not running.
 
 Note that a *user* systemd unit cannot handle resume: the user manager has no
 `suspend.target`, so such a unit silently never fires. The hook has to be at system level.
@@ -162,7 +178,8 @@ not run. Neither controller reachable also exits 1.
 ## Configuration
 
 `~/.config/alienfx-tray/config.json`, written atomically and safe to hand-edit. An
-unparseable file falls back to the built-in defaults rather than leaving you in the dark.
+unparseable file falls back to the built-in defaults rather than leaving you in the dark,
+and is kept first as `config.json.corrupt-<UTC timestamp>` so the next save cannot lose it.
 A file written by an older version is upgraded to the current zone layout the first time it
 is loaded, and the original is kept alongside it as `config.json.bak`.
 

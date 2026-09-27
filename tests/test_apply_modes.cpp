@@ -2,6 +2,7 @@
 #include <QTemporaryDir>
 
 #include <chrono>
+#include <fstream>
 #include <memory>
 #include <sstream>
 
@@ -25,6 +26,7 @@ class TestApplyModes : public QObject {
 
     void applyStandsDownAsASuccess();
     void offStandsDownAsAFailure();
+    void offReportsABrokenConfigBeforeStandingDown();
     void probeStandsDownAsAFailure();
     void probePrintsNoGuidanceWhenItPaintedNothing();
 
@@ -82,6 +84,27 @@ void TestApplyModes::offStandsDownAsAFailure() {
     std::ostringstream err;
     QVERIFY(runOffMode(out, err, kShortWait) != 0);
     QVERIFY2(!err.str().empty(), "a command that did not happen has to say so on stderr");
+}
+
+// --off reads the same config as --apply, so it reports an unreadable one the same way -
+// even when it then stands down for the lock before touching a device.
+void TestApplyModes::offReportsABrokenConfigBeforeStandingDown() {
+    const std::filesystem::path configFile =
+        std::filesystem::path(home_->path().toStdString()) / "alienfx-tray" / "config.json";
+    std::filesystem::create_directories(configFile.parent_path());
+    {
+        std::ofstream out(configFile, std::ios::binary | std::ios::trunc);
+        out << "{ not json";
+    }
+
+    ProcessLock contender;
+    QVERIFY(contender.acquire(kShortWait));
+
+    std::ostringstream out;
+    std::ostringstream err;
+    QVERIFY(runOffMode(out, err, kShortWait) != 0);
+    QVERIFY2(err.str().find("not valid JSON") != std::string::npos,
+             "a broken config must be named on stderr even when nothing was applied");
 }
 
 void TestApplyModes::probeStandsDownAsAFailure() {

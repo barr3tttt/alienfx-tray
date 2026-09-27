@@ -75,13 +75,14 @@ does nothing at all. Each light carries two colours, AC and battery, which is wh
 explanation for "I sent 255 0 0 and got blue". Always assign the named fields.
 
 ### Measured latencies
-- keyboard open ~40 ms, brightness ~20 ms, colour ~20 ms
-- external open ~45 ms, brightness ~3 ms
-- **first** external zone write after an open: ~1600 ms
-- every external zone write after that: ~175 ms
+Measured 2026-09-27 with `ALIENFX_TRAY_TIMING=1` across three cold `--apply` runs:
+- keyboard open ~110-130 ms, brightness ~20 ms, colour ~20 ms
+- external open ~45 ms, brightness ~3 ms, commit ~15 ms
+- every external zone write: ~110-140 ms, including the first after an open
 
-Those numbers drive two design decisions: the engine sends only what changed, and the two
-domains get different idle-release timeouts.
+An earlier table recorded ~175 ms per zone write and a ~1600 ms first write after every
+open; neither reproduces now. Those numbers drove two design decisions, which stand: the
+engine sends only what changed, and the two domains get different idle-release timeouts.
 
 ### Brightness is also the "on" command
 On APIv4 the brightness command carries the list of light IDs and is what turns those
@@ -141,6 +142,11 @@ original as `config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` 
   toolchain configured a tree, so read it before concluding a dependency was uninstalled:
   `dnf history` showing no recent transaction means it was never a host package at all.
   Build and test with the `flatpak run ... org.kde.Sdk//6.10` invocation in the README.
+- 2026-09-27: `cmake --install` compares timestamps, not contents. A rebuild that lands in
+  the same minute as the installed copy is reported `Up-to-date` and silently not copied,
+  so the laptop can run a stale binary while everything claims otherwise. Byte-compare
+  after installing when the install must be current (`cmp build/alienfx-tray
+  ~/.local/bin/alienfx-tray`); `--version` now prints the git revision for the same reason.
 
 ## Maintaining this file
 
