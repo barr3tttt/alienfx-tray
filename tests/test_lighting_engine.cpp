@@ -212,8 +212,8 @@ class TestLightingEngine : public QObject {
     }
 
     // Live preview is only usable because an unchanged zone costs nothing. One external
-    // zone is about 175 ms of USB traffic on this hardware; six of them per wheel frame
-    // would put the lights a second behind the cursor.
+    // zone is about 110-140 ms of USB traffic on this hardware; four of them per wheel
+    // frame would put the lights half a second behind the cursor.
     void onlyChangedZonesAreResent() {
         Scheme scheme = defaultScheme();
 
