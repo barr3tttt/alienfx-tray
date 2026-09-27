@@ -46,8 +46,9 @@ matters that the install is current, byte-compare afterwards:
 cmp build/alienfx-tray ~/.local/bin/alienfx-tray && echo current
 ```
 
-`alienfx-tray --version` prints the version and the git revision it was built from, so
-"which build is this" is answerable without comparing anything.
+`alienfx-tray --version` prints the version and the git revision it was built from, marked
+`-dirty` when tracked files had uncommitted changes, so "which build is this" is answerable
+without comparing anything. The revision is read on every build, not only at configure time.
 
 On Fedora the build dependencies are `qt6-qtbase-devel qt6-qtsvg-devel cmake ninja-build
 gcc-c++`. On Debian and Ubuntu they are `qt6-base-dev qt6-svg-dev cmake ninja-build g++`.
@@ -173,7 +174,8 @@ not run. Neither controller reachable also exits 1.
 ## Configuration
 
 `~/.config/alienfx-tray/config.json`, written atomically and safe to hand-edit. An
-unparseable file falls back to the built-in defaults rather than leaving you in the dark.
+unparseable file falls back to the built-in defaults rather than leaving you in the dark,
+and is kept first as `config.json.corrupt-<UTC timestamp>` so the next save cannot lose it.
 A file written by an older version is upgraded to the current zone layout the first time it
 is loaded, and the original is kept alongside it as `config.json.bak`.
 

@@ -16,8 +16,12 @@
 namespace {
 
 // The version comes from the CMake project() declaration and the git revision the binary
-// was built from, so --version answers "what am I running" in one line. Both are injected
-// as compile definitions; the fallbacks cover a build outside CMake or outside a checkout.
+// was built from, so --version answers "what am I running" in one line. Both are supplied
+// by the build, the revision through a header regenerated on every build; the fallbacks
+// cover a build outside CMake or outside a checkout.
+#if __has_include("git_revision.h")
+#include "git_revision.h"
+#endif
 #ifndef ALIENFX_TRAY_VERSION
 #define ALIENFX_TRAY_VERSION "0.0.0"
 #endif

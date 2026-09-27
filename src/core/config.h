@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -56,6 +58,13 @@ struct Config {
 
 // Writes contents to source with ".bak" appended. Returns true if the write succeeded.
 bool backupConfigFile(const std::filesystem::path& source, const std::string& contents);
+
+// Keeps an unparseable config as source with ".corrupt-<UTC timestamp>" appended, leaving any
+// ".bak" untouched. Reuses an existing copy with identical contents. Returns the path kept,
+// or nothing if the write failed.
+std::optional<std::filesystem::path> preserveCorruptConfig(
+    const std::filesystem::path& source, const std::string& contents,
+    std::chrono::system_clock::time_point when = std::chrono::system_clock::now());
 
 // $XDG_CONFIG_HOME/alienfx-tray, falling back to ~/.config/alienfx-tray.
 [[nodiscard]] std::filesystem::path configDir();

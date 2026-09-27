@@ -3,6 +3,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <ctime>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -123,9 +126,14 @@ ExternalSettings decodeExternal(const json& value) {
         return external;
     }
 
+    // A light ID is a zone's identity, so a repeat is dropped and the first one kept. Done
+    // on every load rather than as a migration: hand-edits happen at any schema, and a
+    // duplicate zone paints twice for no benefit.
+    std::set<std::uint8_t> seen;
     for (const json& entry : value["zones"]) {
         ExternalZone zone;
-        if (decodeZone(entry, zone)) external.zones.push_back(zone);
+        if (decodeZone(entry, zone) && seen.insert(zone.lightId).second)
+            external.zones.push_back(zone);
     }
     return external;
 }
@@ -266,26 +274,54 @@ bool migrateConfig(Config& config) {
             if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
         }
 
-        // De-duplicate by lightId, keeping the first occurrence. Not version-gated: a v2
-        // file can carry duplicates too (hand-edits happen at any schema), and a duplicate
-        // zone paints twice for no benefit.
-        if (config.schemaVersion < 3) {
-            std::set<std::uint8_t> seen;
-            std::erase_if(zones, [&seen](const ExternalZone& z) {
-                return !seen.insert(z.lightId).second;
-            });
-        }
     }
 
     config.schemaVersion = Config::kSchemaVersion;
     return true;
 }
 
-bool backupConfigFile(const std::filesystem::path& source, const std::string& contents) {
-    std::ofstream out(source.string() + ".bak", std::ios::binary | std::ios::trunc);
+namespace {
+
+bool writeFileContents(const std::filesystem::path& target, const std::string& contents) {
+    std::ofstream out(target, std::ios::binary | std::ios::trunc);
     out << contents;
     out.flush();
     return static_cast<bool>(out);
+}
+
+std::string utcTimestamp(std::chrono::system_clock::time_point when) {
+    const std::time_t seconds = std::chrono::system_clock::to_time_t(when);
+    std::tm utc{};
+    ::gmtime_r(&seconds, &utc);
+    std::array<char, 32> buf{};
+    std::strftime(buf.data(), buf.size(), "%Y%m%dT%H%M%SZ", &utc);
+    return std::string(buf.data());
+}
+
+}  // namespace
+
+bool backupConfigFile(const std::filesystem::path& source, const std::string& contents) {
+    return writeFileContents(source.string() + ".bak", contents);
+}
+
+std::optional<std::filesystem::path> preserveCorruptConfig(
+    const std::filesystem::path& source, const std::string& contents,
+    std::chrono::system_clock::time_point when) {
+    // Every login and resume loads the file, so the same broken text is kept once rather
+    // than once per load.
+    const std::string prefix = source.filename().string() + ".corrupt-";
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(source.parent_path(), ec)) {
+        if (!entry.path().filename().string().starts_with(prefix)) continue;
+        std::ifstream in(entry.path(), std::ios::binary);
+        const std::string existing((std::istreambuf_iterator<char>(in)),
+                                   std::istreambuf_iterator<char>());
+        if (existing == contents) return entry.path();
+    }
+
+    const std::filesystem::path target = source.string() + ".corrupt-" + utcTimestamp(when);
+    if (!writeFileContents(target, contents)) return std::nullopt;
+    return target;
 }
 
 std::filesystem::path configDir() {
@@ -372,10 +408,14 @@ LoadResult loadConfig(const std::filesystem::path& path) {
     std::string error;
     if (!deserializeConfig(text, parsed, error)) {
         // The first save after this fallback replaces the file. Keep the unreadable
-        // original beside it first, the same way a migrating load does: a file a human
-        // just broke is exactly the one they will want back.
-        backupConfigFile(path, text);
-        result.error = error;
+        // original beside it first: a file a human just broke is exactly the one they will
+        // want back. Not as the .bak, which may already hold the pre-migration original.
+        if (const auto kept = preserveCorruptConfig(path, text)) {
+            result.error = error + "; the unreadable file was kept as " + kept->string();
+        } else {
+            result.error = error + "; keeping a copy of the unreadable file failed, and the "
+                                   "next save will replace it";
+        }
         return result;
     }
     result.config = std::move(parsed);

@@ -1,6 +1,7 @@
 #include "core/lighting_engine.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace alienfx {
@@ -82,13 +83,9 @@ DomainStatus LightingEngine::applyKeyboard(const KeyboardSettings& settings) {
 DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     if (!external_) return DomainStatus{DeviceState::Missing, "no external backend"};
 
-    // Nothing to paint and nothing previously painted: never open the controller at all.
-    // The open below happens only when there are zones to set or old zones to drive off.
-    if (settings.zones.empty() &&
-        (!appliedExternal_ || appliedExternal_->zones.empty())) {
-        appliedExternal_ = settings;
+    // Known to be showing nothing and asked to show nothing: never open the controller.
+    if (settings.zones.empty() && appliedExternal_ && appliedExternal_->zones.empty())
         return DomainStatus{DeviceState::Ready, "no zones configured"};
-    }
 
     const bool wasOpen = external_->isOpen();
     if (!wasOpen) {
@@ -101,23 +98,28 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
 
     const ExternalSettings* applied = appliedExternal_ ? &*appliedExternal_ : nullptr;
 
-    // Zones the previous apply lit that this one no longer carries have to be driven off
-    // before they are forgotten, or they stay lit forever - an explicit empty zone list in
-    // a hand-edited config means "no external lighting", not "stop updating the hardware".
+    // Lights that may still be lit and that this scheme no longer carries have to be driven
+    // off, or they stay lit forever - an explicit empty zone list in a hand-edited config
+    // means "no external lighting", not "stop updating the hardware". When the previous
+    // apply is known that is exactly its lights. When it is not - a fresh engine, an idle
+    // release, a failed command - the controller can be showing anything an earlier session
+    // painted, so every light known to be visible on this chassis is assumed lit.
     // A black pair, not a removal: there is no off command for these lights, only colours.
-    bool sentAnything = false;
-    if (applied) {
-        for (const ExternalZone& previous : applied->zones) {
-            if (findZone(settings, previous.lightId)) continue;
-            for (std::uint8_t hwId : zoneHardwareIds(previous)) {
-                if (!external_->applyZone(hwId, Rgb{}, Rgb{})) {
-                    appliedExternal_.reset();
-                    return external_->status();
-                }
-            }
-            sentAnything = true;
+    const std::vector<std::uint8_t> wanted = collectHardwareIds(settings);
+    const std::vector<std::uint8_t> possiblyLit =
+        applied ? collectHardwareIds(*applied)
+                : std::vector<std::uint8_t>(std::begin(kVisibleHardwareIds),
+                                            std::end(kVisibleHardwareIds));
+    std::vector<std::uint8_t> stale;
+    std::ranges::set_difference(possiblyLit, wanted, std::back_inserter(stale));
+
+    for (std::uint8_t hwId : stale) {
+        if (!external_->applyZone(hwId, Rgb{}, Rgb{})) {
+            appliedExternal_.reset();
+            return external_->status();
         }
     }
+    bool sentAnything = !stale.empty();
 
     if (settings.zones.empty()) {
         if (sentAnything && !external_->commit()) {
@@ -133,9 +135,7 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     // be resent whenever the set of lights changes, not only when the level does.
     if (!applied || applied->brightness != settings.brightness ||
         !sameLightIds(*applied, settings)) {
-        std::vector<std::uint8_t> lightIds = collectHardwareIds(settings);
-
-        if (!external_->setBrightness(settings.brightness, lightIds)) {
+        if (!external_->setBrightness(settings.brightness, wanted)) {
             appliedExternal_.reset();
             return external_->status();
         }

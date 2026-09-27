@@ -37,7 +37,8 @@ struct ApplyResult {
 //    the cursor; sending only the zone being edited keeps it under 150 ms.
 //
 // The change tracking is discarded whenever the devices are released or a command fails,
-// because at that point what the hardware is actually showing is no longer known.
+// because at that point what the hardware is actually showing is no longer known. Every
+// known external zone the next scheme does not carry is then assumed lit and driven off.
 class LightingEngine {
    public:
     LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
