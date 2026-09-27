@@ -29,7 +29,10 @@ mkdir -p "$XDG_CONFIG_HOME"
 # would append a second zero. Count the lines instead.
 count_instances() { pgrep -f "^$BIN\$" 2>/dev/null | wc -l | tr -d ' '; }
 
-if [[ "$(count_instances)" != "0" ]]; then
+# The guard has to see ANY running tray, not just one started from this build tree: the
+# single-instance socket does not care which binary path claimed it, and a tray running
+# from ~/.local/bin would make the launched "first instance" exit on contact.
+if pgrep -x alienfx-tray >/dev/null 2>&1; then
   skip "single instance (an alienfx-tray is already running)"
   summary "single-instance"
   exit $?

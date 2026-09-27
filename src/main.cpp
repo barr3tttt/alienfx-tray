@@ -15,10 +15,22 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.1.0";
+// The version comes from the CMake project() declaration and the git revision the binary
+// was built from, so --version answers "what am I running" in one line. Both are injected
+// as compile definitions; the fallbacks cover a build outside CMake or outside a checkout.
+#ifndef ALIENFX_TRAY_VERSION
+#define ALIENFX_TRAY_VERSION "0.0.0"
+#endif
+#ifndef ALIENFX_TRAY_GIT_SHA
+#define ALIENFX_TRAY_GIT_SHA "unknown"
+#endif
+
+constexpr const char* kVersion = ALIENFX_TRAY_VERSION;
+constexpr const char* kGitSha = ALIENFX_TRAY_GIT_SHA;
 
 void printUsage(std::ostream& out) {
-    out << "alienfx-tray " << kVersion << " - RGB lighting for Alienware laptops on Linux\n"
+    out << "alienfx-tray " << kVersion << " (" << kGitSha
+        << ") - RGB lighting for Alienware laptops on Linux\n"
         << "\n"
         << "Usage:\n"
         << "  alienfx-tray                    run the tray icon\n"
@@ -46,7 +58,7 @@ int main(int argc, char* argv[]) {
             printUsage(std::cout);
             return 0;
         case alienfx::CliMode::Version:
-            std::cout << kVersion << "\n";
+            std::cout << kVersion << " (" << kGitSha << ")\n";
             return 0;
         case alienfx::CliMode::Apply:
             return alienfx::runApplyMode(std::cout, std::cerr);

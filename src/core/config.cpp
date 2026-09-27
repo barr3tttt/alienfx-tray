@@ -266,8 +266,10 @@ bool migrateConfig(Config& config) {
             if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
         }
 
-        // De-duplicate by lightId, keeping the first occurrence.
-        if (config.schemaVersion < 2) {
+        // De-duplicate by lightId, keeping the first occurrence. Not version-gated: a v2
+        // file can carry duplicates too (hand-edits happen at any schema), and a duplicate
+        // zone paints twice for no benefit.
+        if (config.schemaVersion < 3) {
             std::set<std::uint8_t> seen;
             std::erase_if(zones, [&seen](const ExternalZone& z) {
                 return !seen.insert(z.lightId).second;
@@ -369,6 +371,10 @@ LoadResult loadConfig(const std::filesystem::path& path) {
     Config parsed;
     std::string error;
     if (!deserializeConfig(text, parsed, error)) {
+        // The first save after this fallback replaces the file. Keep the unreadable
+        // original beside it first, the same way a migrating load does: a file a human
+        // just broke is exactly the one they will want back.
+        backupConfigFile(path, text);
         result.error = error;
         return result;
     }
@@ -410,6 +416,10 @@ bool saveConfig(const Config& config, const std::filesystem::path& path, std::st
         out.flush();
         if (!out) {
             error = "write failed for " + temp.string();
+            // A failed write must not strand the temp file either; only the rename gets to
+            // leave anything behind.
+            std::error_code ignored;
+            std::filesystem::remove(temp, ignored);
             return false;
         }
     }

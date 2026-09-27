@@ -166,6 +166,14 @@ bool installStartupIntegration(std::string& error) {
                                      std::filesystem::perms::others_read |
                                      std::filesystem::perms::others_exec,
                                  ec);
+    if (ec) {
+        // Without the executable bit the shim lands but never runs, and the failure only
+        // shows up at the next login. That is worth a checked error, not a rename anyway.
+        std::error_code ignored;
+        std::filesystem::remove(temp, ignored);
+        error = "could not make " + temp.string() + " executable: " + ec.message();
+        return false;
+    }
     std::filesystem::rename(temp, status.shimPath, ec);
     if (ec) {
         std::error_code ignored;

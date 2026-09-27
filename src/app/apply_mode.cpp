@@ -164,6 +164,8 @@ int runApplyMode(std::ostream& out, std::ostream& err,
 
 int runOffMode(std::ostream& out, std::ostream& err, std::chrono::milliseconds lockTimeout) {
     LoadResult loaded = loadConfig(configPath());
+    if (!loaded.error.empty())
+        err << "alienfx-tray: " << loaded.error << " - using defaults\n";
     LightingState state = loaded.config.lightingState();
     state.lightsOn = false;
     return applyWithRetry(resolveOutput(state), kOffStandDown, lockTimeout, out, err).exitCode;
@@ -207,7 +209,7 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
             out << "  ID " << static_cast<int>(entry.id) << "  " << entry.name << "\n";
         out << "\nIDs 0 and 1 both drive the rear ring - you should see two colours on the "
                "ring.\n"
-               "IDs 4 and up  not sent, so they keep whatever they were already showing\n\n"
+               "IDs 4 and up are not sent, so they keep whatever they were already showing\n\n"
                "If two zones report the same colour, or one zone reports two colours, rerun\n"
                "with a single ID to remove the ambiguity:  --probe-external=1\n\n";
     }

@@ -14,11 +14,12 @@ const ExternalZone* findZone(const ExternalSettings& settings, std::uint8_t ligh
     return nullptr;
 }
 
+// Compared as sets, so reordering the zone list re-sends nothing at all: zone identity is
+// the light ID, not the position in the list.
 bool sameLightIds(const ExternalSettings& a, const ExternalSettings& b) {
-    if (a.zones.size() != b.zones.size()) return false;
-    for (std::size_t i = 0; i < a.zones.size(); ++i)
-        if (a.zones[i].lightId != b.zones[i].lightId) return false;
-    return true;
+    // collectHardwareIds returns sorted, de-duplicated ID lists, so vector equality is set
+    // equality here.
+    return collectHardwareIds(a) == collectHardwareIds(b);
 }
 
 }  // namespace
@@ -26,6 +27,8 @@ bool sameLightIds(const ExternalSettings& a, const ExternalSettings& b) {
 LightingEngine::LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
                                std::unique_ptr<IExternalDevice> external)
     : keyboard_(std::move(keyboard)), external_(std::move(external)) {}
+
+LightingEngine::~LightingEngine() { releaseDevices(); }
 
 ApplyResult LightingEngine::apply(const ResolvedScheme& resolved) {
     ApplyResult result;
@@ -78,7 +81,11 @@ DomainStatus LightingEngine::applyKeyboard(const KeyboardSettings& settings) {
 
 DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     if (!external_) return DomainStatus{DeviceState::Missing, "no external backend"};
-    if (settings.zones.empty()) {
+
+    // Nothing to paint and nothing previously painted: never open the controller at all.
+    // The open below happens only when there are zones to set or old zones to drive off.
+    if (settings.zones.empty() &&
+        (!appliedExternal_ || appliedExternal_->zones.empty())) {
         appliedExternal_ = settings;
         return DomainStatus{DeviceState::Ready, "no zones configured"};
     }
@@ -94,6 +101,34 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
 
     const ExternalSettings* applied = appliedExternal_ ? &*appliedExternal_ : nullptr;
 
+    // Zones the previous apply lit that this one no longer carries have to be driven off
+    // before they are forgotten, or they stay lit forever - an explicit empty zone list in
+    // a hand-edited config means "no external lighting", not "stop updating the hardware".
+    // A black pair, not a removal: there is no off command for these lights, only colours.
+    bool sentAnything = false;
+    if (applied) {
+        for (const ExternalZone& previous : applied->zones) {
+            if (findZone(settings, previous.lightId)) continue;
+            for (std::uint8_t hwId : zoneHardwareIds(previous)) {
+                if (!external_->applyZone(hwId, Rgb{}, Rgb{})) {
+                    appliedExternal_.reset();
+                    return external_->status();
+                }
+            }
+            sentAnything = true;
+        }
+    }
+
+    if (settings.zones.empty()) {
+        if (sentAnything && !external_->commit()) {
+            appliedExternal_.reset();
+            return external_->status();
+        }
+        appliedExternal_ = settings;
+        return DomainStatus{DeviceState::Ready,
+                            sentAnything ? "external zones turned off" : "no zones configured"};
+    }
+
     // On APIv4 the brightness command is also what turns the listed lights on, so it has to
     // be resent whenever the set of lights changes, not only when the level does.
     if (!applied || applied->brightness != settings.brightness ||
@@ -106,7 +141,6 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
         }
     }
 
-    bool sentAnything = false;
     for (const ExternalZone& zone : settings.zones) {
         const ExternalZone* previous = applied ? findZone(*applied, zone.lightId) : nullptr;
         if (previous && previous->color == zone.color) continue;

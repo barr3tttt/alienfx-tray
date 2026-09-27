@@ -8,11 +8,11 @@ namespace alienfx {
 
 // Set ALIENFX_TRAY_TIMING=1 for a per-operation breakdown on stderr.
 //
-// This hardware is undocumented and its latencies are not guessable. Measured on an
-// Alienware m15 R7 AMD: a keyboard colour set costs about 20 ms, while a single external
-// power-light set costs about 175 ms, because the APIv4 power path walks control IDs
+// This hardware is undocumented and its latencies are not guessable. Measured 2026-09-27 on
+// an Alienware m15 R7 AMD: a keyboard colour set costs about 20 ms, while a single external
+// power-light set costs about 110-140 ms, because the APIv4 power path walks control IDs
 // 0x5b..0x60 for every light. That one measurement is why the engine sends only what
-// changed - six zones at 175 ms each would put a colour wheel drag a second behind the
+// changed - four zones at that price would put a colour wheel drag visibly behind the
 // cursor. Keeping the means to re-measure is worth twenty lines.
 class PhaseTimer {
    public:

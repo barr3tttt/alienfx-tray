@@ -38,6 +38,17 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix ~/.local
 ```
 
+`cmake --install` compares timestamps, not contents: a rebuild that lands in the same
+minute as the installed copy is reported as `Up-to-date` and silently not copied. When it
+matters that the install is current, byte-compare afterwards:
+
+```sh
+cmp build/alienfx-tray ~/.local/bin/alienfx-tray && echo current
+```
+
+`alienfx-tray --version` prints the version and the git revision it was built from, so
+"which build is this" is answerable without comparing anything.
+
 On Fedora the build dependencies are `qt6-qtbase-devel qt6-qtsvg-devel cmake ninja-build
 gcc-c++`. On Debian and Ubuntu they are `qt6-base-dev qt6-svg-dev cmake ninja-build g++`.
 

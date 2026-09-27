@@ -63,6 +63,42 @@ class TestConfig : public QObject {
         QCOMPARE(pair.effectiveBattery(), (Rgb{200, 100, 50}));
     }
 
+    // The first save after a fallback replaces the file, so the unreadable original has to
+    // be kept before that can happen - a file a human just broke is the one they want back.
+    void anUnparseableFileIsBackedUpBeforeDefaultsTakeOver() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        const std::string broken = "{ this is not json";
+        writeAll(path, broken);
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.fileExisted);
+        QVERIFY(!result.error.empty());
+        QCOMPARE(readAll(path.string() + ".bak"), broken);
+    }
+
+    // Duplicates are dropped at every migrated version, not just v1: a v2 file can carry
+    // them too (hand-edits happen at any schema).
+    void migrationDeduplicatesV2Configs() {
+        Config config;
+        config.schemaVersion = 2;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(ExternalZone{0, "Rear ring 1", uniform(Rgb{10, 20, 30})});
+        s.external.zones.push_back(ExternalZone{1, "Rear ring 2", uniform(Rgb{40, 50, 60})});
+        s.external.zones.push_back(
+            ExternalZone{0, "hand-added duplicate", uniform(Rgb{1, 2, 3})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+        const auto& zones = config.schemes.front().external.zones;
+        QCOMPARE(zones.size(), std::size_t(2));
+        QCOMPARE(zones[0].color.ac, (Rgb{10, 20, 30}));
+    }
+
     // A config nobody can parse must still leave the user with working lights.
     void anUnparseableFileFallsBackToDefaults() {
         QTemporaryDir dir;

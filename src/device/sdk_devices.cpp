@@ -44,7 +44,12 @@ AlienFX_SDK::Afx_action powerAction(Rgb color) {
 
 SdkDeviceBase::SdkDeviceBase(UsbContext& context, DeviceId id) : context_(context), id_(id) {}
 
-SdkDeviceBase::~SdkDeviceBase() = default;
+// Closes on destruction, not just on an explicit close(). The kernel-driver reattach
+// below is too expensive to leave to convention: a destroyed-still-open device would keep
+// the interface driverless until reboot, and on this hardware that interface is the
+// built-in keyboard. close() early-returns when already closed, so the explicit release
+// paths that run first cost nothing extra.
+SdkDeviceBase::~SdkDeviceBase() { close(); }
 
 bool SdkDeviceBase::open() {
     if (device_) return true;

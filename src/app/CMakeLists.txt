@@ -34,6 +34,28 @@ qt_add_executable(alienfx-tray
   ../ui/control_panel.cpp
   ../ui/tray_icon.cpp)
 
+# Single-source the version string from the project() declaration, and bake in the git
+# revision so --version can answer "what am I running" - a stale install was once
+# indistinguishable from a current one, and the difference mattered.
+find_package(Git QUIET)
+set(ALIENFX_TRAY_GIT_SHA "unknown")
+if(Git_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE ALIENFX_GIT_SHA_OUT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  # A build from a tarball or an exported tree has no revision to report; say so rather
+  # than printing an empty string.
+  if(ALIENFX_GIT_SHA_OUT)
+    set(ALIENFX_TRAY_GIT_SHA "${ALIENFX_GIT_SHA_OUT}")
+  endif()
+endif()
+target_compile_definitions(alienfx-tray PRIVATE
+  ALIENFX_TRAY_VERSION="${PROJECT_VERSION}"
+  ALIENFX_TRAY_GIT_SHA="${ALIENFX_TRAY_GIT_SHA}")
+
 qt_add_resources(alienfx-tray "app_resources"
   PREFIX "/icons"
   BASE "${CMAKE_SOURCE_DIR}/packaging"

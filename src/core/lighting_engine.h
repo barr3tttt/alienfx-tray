@@ -30,11 +30,11 @@ struct ApplyResult {
 //  * A failure on one domain never short-circuits the other. If the keyboard is wedged the
 //    external lights still change, and the UI says which half is unhappy.
 //
-//  * Only what changed is sent. Measured on an Alienware m15 R7 AMD, one external zone costs
-//    about 175 ms because the APIv4 power path walks control IDs 0x5b..0x60 per light, while
-//    a keyboard colour costs about 20 ms. Re-sending all six zones on every frame of a colour
-//    wheel drag would put the lights a full second behind the cursor; sending only the zone
-//    being edited keeps it under 200 ms.
+//  * Only what changed is sent. Measured 2026-09-27 on an Alienware m15 R7 AMD, one
+//    external zone costs about 110-140 ms because the APIv4 power path walks control IDs
+//    0x5b..0x60 per light, while a keyboard colour costs about 20 ms. Re-sending all four
+//    zones on every frame of a colour wheel drag would put the lights half a second behind
+//    the cursor; sending only the zone being edited keeps it under 150 ms.
 //
 // The change tracking is discarded whenever the devices are released or a command fails,
 // because at that point what the hardware is actually showing is no longer known.
@@ -42,6 +42,10 @@ class LightingEngine {
    public:
     LightingEngine(std::unique_ptr<IKeyboardDevice> keyboard,
                    std::unique_ptr<IExternalDevice> external);
+    // Releases both USB claims. The explicit releaseDevices() calls at shutdown stay the
+    // primary path; this is the backstop that makes the property structural rather than
+    // conventional, so a future caller cannot leak a claimed interface by forgetting one.
+    ~LightingEngine();
 
     ApplyResult apply(const ResolvedScheme& resolved);
 
@@ -55,8 +59,8 @@ class LightingEngine {
 
     // Release one of them. The two domains want very different idle policies: claiming the
     // keyboard controller detaches usbhid from the interface the user types on, so it has to
-    // go back quickly, while the external controller charges about 1.6 s for the first write
-    // after every open and is worth keeping.
+    // go back quickly, while the external controller charges a real enumeration round for
+    // every open and is worth keeping.
     void releaseDevice(Domain domain);
 
     [[nodiscard]] bool anyDeviceOpen() const;

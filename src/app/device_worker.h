@@ -45,12 +45,12 @@ class DeviceWorker : public QObject {
     //
     // Claiming the keyboard controller detaches usbhid from the interface the user types on -
     // it is the built-in keyboard, and there is no separate LED interface - so the claim goes
-    // back almost immediately. Re-opening it is cheap: about 40 ms, and the first colour set
-    // after that is another 20 ms.
+    // back almost immediately. Re-opening it costs about 110-130 ms, and a colour set after
+    // that is another 20 ms.
     //
-    // The external controller costs about 1.6 s for the first write after every open, and
-    // 175 ms for each one after that. Nothing else on the system wants it and no input device
-    // is affected, so releasing it eagerly would buy nothing and charge 1.6 s for it.
+    // The external controller costs about 45 ms to open and 110-140 ms per zone write. Nothing
+    // else on the system wants it and no input device is affected, so releasing it eagerly
+    // would buy nothing and charge the reopen for it.
     static constexpr int kKeyboardIdleReleaseMs = 1500;
     static constexpr int kExternalIdleReleaseMs = 20000;
 

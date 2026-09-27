@@ -39,8 +39,8 @@ int runOffMode(std::ostream& out, std::ostream& err,
 
 // Identification probe for the external controller.
 //
-// With no argument: lights IDs 0-5 six distinct colours at once. Fast, but a report like
-// "the ring is green and yellow" is then ambiguous between two IDs.
+// With no argument: lights IDs 0-3 in four distinct colours at once. Fast, but a report
+// like "the ring is green and yellow" is then ambiguous between two IDs.
 //
 // With an ID: lights that one white and everything else black. Slower to work through, but
 // it produces an answer that cannot be misread - which is how a provisional zone becomes a
