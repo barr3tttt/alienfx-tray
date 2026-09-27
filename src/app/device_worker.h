@@ -70,6 +70,17 @@ class DeviceWorker : public QObject {
     // the caller can expect back from applyFinished, so a superseded apply is recognisable.
     quint64 submit(const ResolvedScheme& scheme);
 
+    // Callable from any thread. Whether what the external lights were last sent may be
+    // trusted across the idle release. Releasing the handle changes nothing they show, but
+    // a suspend can, so this is only safe while something reports resumes - otherwise every
+    // idle release forgets it and the next apply repaints the lot. Off until told otherwise.
+    void setExternalStateSurvivesIdleRelease(bool survives);
+
+    // Callable from any thread. The external lights may no longer show what they were sent -
+    // the machine has resumed - so the next apply repaints them in full. Takes effect before
+    // whatever is applied next, including a scheme already pending.
+    void markExternalStateUnknown();
+
    public slots:
     // Runs on the worker thread once it starts.
     void initialise();
@@ -89,6 +100,9 @@ class DeviceWorker : public QObject {
     // Built on the worker thread rather than by the constructor, because opening USB handles
     // must not happen on the GUI thread. Overridden in tests to stand in for hardware.
     virtual DeviceSet createDevices();
+
+    // The idle release delays. Overridden in tests so a release can be waited for.
+    [[nodiscard]] virtual int idleReleaseMs(Domain domain) const;
 
    private slots:
     void processPending();
@@ -114,6 +128,8 @@ class DeviceWorker : public QObject {
     std::optional<ResolvedScheme> pending_;
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
+    std::atomic<bool> externalStateSurvivesIdleRelease_{false};
+    std::atomic<bool> externalStateUnknown_{false};
     bool shuttingDown_ = false;
 
     DomainStatus lastKeyboardStatus_;

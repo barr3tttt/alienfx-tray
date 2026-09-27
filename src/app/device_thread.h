@@ -38,6 +38,10 @@ class DeviceThread : public QObject {
     // Returns the generation the caller can expect back from applyFinished. Never blocks.
     quint64 submit(const ResolvedScheme& scheme);
 
+    // See DeviceWorker. Never block.
+    void setExternalStateSurvivesIdleRelease(bool survives);
+    void markExternalStateUnknown();
+
     // Asks the worker to release its devices, then waits at most `limit` for the thread to
     // finish. Returns false if it was still running when the limit expired, in which case it
     // is deliberately abandoned rather than joined: the kernel reattaches usbhid when the

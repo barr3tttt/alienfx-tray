@@ -62,6 +62,14 @@ class LightingController : public QObject {
     // Re-sends the current state. Used after a device comes back.
     void reapply();
 
+    // Whether resumes reach onSystemResumed. Only then may what the external lights were
+    // sent be trusted across the worker's idle release.
+    void setResumeWatched(bool watched);
+
+    // The machine has come back from suspend: whatever the lights show now is not known to
+    // be what was sent, so the current state is repainted in full.
+    void onSystemResumed();
+
     // Writes a debounced edit out now, rather than waiting for the quiet period. The colour
     // pickers call this when the user lets go, so a drag costs one write at the end instead
     // of one per settling period.

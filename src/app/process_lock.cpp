@@ -4,6 +4,9 @@
 #include <sys/file.h>
 #include <unistd.h>
 
+#include <QString>
+#include <QtGlobal>
+
 #include <cstdlib>
 #include <thread>
 #include <utility>
@@ -13,7 +16,10 @@ namespace alienfx {
 ProcessLock::~ProcessLock() { release(); }
 
 ProcessLock::ProcessLock(ProcessLock&& other) noexcept
-    : fd_(other.fd_), lastCount_(other.lastCount_), othersHeld_(other.othersHeld_) {
+    : fd_(other.fd_),
+      lastCount_(other.lastCount_),
+      othersHeld_(other.othersHeld_),
+      unserialised_(other.unserialised_) {
     other.fd_ = -1;
 }
 
@@ -23,6 +29,7 @@ ProcessLock& ProcessLock::operator=(ProcessLock&& other) noexcept {
         fd_ = other.fd_;
         lastCount_ = other.lastCount_;
         othersHeld_ = other.othersHeld_;
+        unserialised_ = other.unserialised_;
         other.fd_ = -1;
     }
     return *this;
@@ -42,10 +49,15 @@ bool ProcessLock::acquire(std::chrono::milliseconds timeout) {
     if (fd < 0) {
         // No lock file means no serialisation, but refusing to light the keyboard because a
         // lock file could not be created would be a worse outcome than the race it prevents.
+        othersHeld_ = !unserialised_;
+        if (!unserialised_)
+            qWarning("alienfx-tray: cannot open the device lock %s; applying without it",
+                     qPrintable(QString::fromStdString(path)));
+        unserialised_ = true;
         lastCount_.reset();
-        othersHeld_ = true;
         return true;
     }
+    unserialised_ = false;
 
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     for (;;) {

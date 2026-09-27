@@ -75,6 +75,7 @@ class LightingEngine {
     // drives off every known external zone the scheme does not carry. For callers that know
     // something else may have painted the hardware while it was released.
     void forgetAppliedState();
+    void forgetAppliedState(Domain domain);
 
     [[nodiscard]] bool anyDeviceOpen() const;
     [[nodiscard]] bool isDeviceOpen(Domain domain) const;

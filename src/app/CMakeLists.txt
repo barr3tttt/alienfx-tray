@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Network Widgets Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Network Widgets Svg)
 
 qt_standard_project_setup()
 
@@ -15,11 +15,14 @@ add_library(alienfx_app STATIC
   process_lock.cpp
   signal_handler.cpp
   single_instance.cpp
+  sleep_monitor.cpp
   startup_integration.cpp)
 
 target_link_libraries(alienfx_app PUBLIC
   alienfx_device
   Qt6::Core
+  # logind's PrepareForSleep, so the tray notices a resume on its own.
+  Qt6::DBus
   # QLocalServer/QLocalSocket, for the single-instance guard. Two tray processes fighting
   # over one USB interface is exactly the failure that leaves a keyboard claimed.
   Qt6::Network)

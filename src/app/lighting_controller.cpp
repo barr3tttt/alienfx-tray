@@ -125,6 +125,15 @@ void LightingController::deleteScheme(const QString& name) {
 
 void LightingController::reapply() { submitCurrent(); }
 
+void LightingController::setResumeWatched(bool watched) {
+    if (deviceThread_) deviceThread_->setExternalStateSurvivesIdleRelease(watched);
+}
+
+void LightingController::onSystemResumed() {
+    if (deviceThread_) deviceThread_->markExternalStateUnknown();
+    submitCurrent();
+}
+
 void LightingController::flushPendingSave() {
     if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
 }

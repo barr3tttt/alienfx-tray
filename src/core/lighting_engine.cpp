@@ -183,8 +183,15 @@ void LightingEngine::releaseDevice(Domain domain) {
 }
 
 void LightingEngine::forgetAppliedState() {
-    appliedKeyboard_.reset();
-    appliedExternal_.reset();
+    forgetAppliedState(Domain::Keyboard);
+    forgetAppliedState(Domain::External);
+}
+
+void LightingEngine::forgetAppliedState(Domain domain) {
+    if (domain == Domain::Keyboard)
+        appliedKeyboard_.reset();
+    else
+        appliedExternal_.reset();
 }
 
 bool LightingEngine::anyDeviceOpen() const {

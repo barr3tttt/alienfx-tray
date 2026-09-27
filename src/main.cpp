@@ -10,6 +10,7 @@
 #include "app/lighting_controller.h"
 #include "app/metatypes.h"
 #include "app/signal_handler.h"
+#include "app/sleep_monitor.h"
 #include "app/single_instance.h"
 #include "ui/tray_icon.h"
 
@@ -96,6 +97,11 @@ int main(int argc, char* argv[]) {
 
     alienfx::LightingController controller;
     alienfx::ui::TrayIcon tray(controller);
+
+    alienfx::SleepMonitor sleepMonitor;
+    controller.setResumeWatched(sleepMonitor.watching());
+    QObject::connect(&sleepMonitor, &alienfx::SleepMonitor::resumed, &controller,
+                     &alienfx::LightingController::onSystemResumed);
 
     QObject::connect(&instance, &alienfx::SingleInstance::raiseRequested, &tray,
                      &alienfx::ui::TrayIcon::togglePanel);

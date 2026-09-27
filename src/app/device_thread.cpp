@@ -33,6 +33,14 @@ quint64 DeviceThread::submit(const ResolvedScheme& scheme) {
     return worker_->submit(scheme);
 }
 
+void DeviceThread::setExternalStateSurvivesIdleRelease(bool survives) {
+    if (worker_) worker_->setExternalStateSurvivesIdleRelease(survives);
+}
+
+void DeviceThread::markExternalStateUnknown() {
+    if (worker_) worker_->markExternalStateUnknown();
+}
+
 bool DeviceThread::stop(std::chrono::milliseconds limit) {
     if (!thread_) return true;
 
