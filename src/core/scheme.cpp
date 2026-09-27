@@ -35,7 +35,6 @@ std::string defaultZoneName(std::uint8_t lightId) {
 }
 
 std::vector<std::uint8_t> zoneHardwareIds(const ExternalZone& zone) {
-    if (zone.lightId == 0) return {0, 1};
     return {zone.lightId};
 }
 
@@ -75,6 +74,42 @@ std::vector<Scheme> builtinSchemes() {
     white.keyboard.brightness = Brightness::fromPercent(70);
     white.external = defaultExternalSettings(Rgb{255, 255, 255});
     schemes.push_back(white);
+
+    Scheme blue;
+    blue.name = "Steady blue";
+    blue.keyboard.color = Rgb{0, 80, 210};
+    blue.external = defaultExternalSettings(Rgb{0, 80, 210});
+    schemes.push_back(blue);
+
+    Scheme red;
+    red.name = "Solid red";
+    red.keyboard.color = Rgb{255, 0, 0};
+    red.external = defaultExternalSettings(Rgb{255, 0, 0});
+    schemes.push_back(red);
+
+    Scheme green;
+    green.name = "Solid green";
+    green.keyboard.color = Rgb{0, 255, 0};
+    green.external = defaultExternalSettings(Rgb{0, 255, 0});
+    schemes.push_back(green);
+
+    Scheme orange;
+    orange.name = "Solid orange";
+    orange.keyboard.color = Rgb{255, 128, 0};
+    orange.external = defaultExternalSettings(Rgb{255, 128, 0});
+    schemes.push_back(orange);
+
+    Scheme cyan;
+    cyan.name = "Solid cyan";
+    cyan.keyboard.color = Rgb{0, 255, 255};
+    cyan.external = defaultExternalSettings(Rgb{0, 255, 255});
+    schemes.push_back(cyan);
+
+    Scheme pink;
+    pink.name = "Solid pink";
+    pink.keyboard.color = Rgb{255, 64, 192};
+    pink.external = defaultExternalSettings(Rgb{255, 64, 192});
+    schemes.push_back(pink);
 
     // Amber on battery, teal on AC - the split the power-light path gives us for free.
     Scheme battery;

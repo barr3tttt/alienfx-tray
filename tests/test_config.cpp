@@ -105,8 +105,9 @@ class TestConfig : public QObject {
         const Scheme* scheme = result.config.findScheme("x");
         QVERIFY(scheme != nullptr);
         QCOMPARE(scheme->keyboard.color, (Rgb{1, 2, 3}));
-        QCOMPARE(scheme->external.zones.size(), std::size_t(1));
-        QCOMPARE(scheme->external.zones.front().name, defaultZoneName(1));
+        QCOMPARE(scheme->external.zones.size(), std::size_t(2));
+        QCOMPARE(scheme->external.zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(scheme->external.zones[1].lightId, std::uint8_t(1));
         QCOMPARE(scheme->external.zones.front().color.ac, (Rgb{4, 5, 6}));
     }
 
@@ -347,8 +348,9 @@ class TestConfig : public QObject {
 
     // --- migration tests ---
 
-    // A config with separate zone 0 and 1 entries collapses them into one Rear ring.
-    void migrationCollapsesDuplicateRingZones() {
+    // A v1 config with separate zone 0 and 1 entries keeps them as separate zones after
+    // migration. Zone 0's colour wins; both are renamed to current defaults.
+    void migrationKeepsSeparateRingSegments() {
         Config config;
         config.schemaVersion = 1;
         Scheme s;
@@ -365,13 +367,15 @@ class TestConfig : public QObject {
         QVERIFY(migrateConfig(config));
 
         const ExternalSettings& ext = config.schemes.front().external;
-        QCOMPARE(ext.zones.size(), std::size_t(3));
-        // Zone 0's colour wins.
+        QCOMPARE(ext.zones.size(), std::size_t(4));
+        // Zone 0's identity preserved, renamed to current default.
         QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(ext.zones[0].name, std::string("Rear ring"));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
         QCOMPARE(ext.zones[0].color.ac, (Rgb{10, 20, 30}));
-        QCOMPARE(ext.zones[1].lightId, std::uint8_t(2));
-        QCOMPARE(ext.zones[2].lightId, std::uint8_t(3));
+        QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[2].lightId, std::uint8_t(2));
+        QCOMPARE(ext.zones[3].lightId, std::uint8_t(3));
     }
 
     // Zones 4 and 5 light nothing visible: migration removes them.
@@ -396,7 +400,7 @@ class TestConfig : public QObject {
         QVERIFY(migrateConfig(config));
 
         const ExternalSettings& ext = config.schemes.front().external;
-        QCOMPARE(ext.zones.size(), std::size_t(3));
+        QCOMPARE(ext.zones.size(), std::size_t(4));
         for (const ExternalZone& z : ext.zones) {
             QVERIFY2(z.lightId != 4 && z.lightId != 5, "zones 4 and 5 must be removed");
         }
@@ -419,9 +423,13 @@ class TestConfig : public QObject {
         QVERIFY(migrateConfig(config));
 
         const ExternalSettings& ext = config.schemes.front().external;
-        QCOMPARE(ext.zones.size(), std::size_t(2));
-        QCOMPARE(ext.zones[0].name, std::string("Rear ring"));
-        QCOMPARE(ext.zones[1].name, std::string("The glowy thing"));
+        QCOMPARE(ext.zones.size(), std::size_t(3));
+        QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[2].lightId, std::uint8_t(2));
+        QCOMPARE(ext.zones[2].name, std::string("The glowy thing"));
     }
 
     // Running migration twice is safe - the second pass makes no changes.
@@ -442,8 +450,11 @@ class TestConfig : public QObject {
         QVERIFY(!migrateConfig(config));
 
         const ExternalSettings& ext = config.schemes.front().external;
-        QCOMPARE(ext.zones.size(), std::size_t(1));
-        QCOMPARE(ext.zones.front().name, std::string("Rear ring"));
+        QCOMPARE(ext.zones.size(), std::size_t(2));
+        QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
     }
 
     void migrationCreatesConfigBackup() {
@@ -469,10 +480,11 @@ class TestConfig : public QObject {
         QVERIFY(result.error.empty());
         QVERIFY(result.fileExisted);
 
-        // The migrated config should have a single Rear ring entry.
+        // The migrated config should have two separate ring segment entries.
         const ExternalSettings& ext = result.config.schemes.front().external;
-        QCOMPARE(ext.zones.size(), std::size_t(1));
-        QCOMPARE(ext.zones.front().lightId, std::uint8_t(0));
+        QCOMPARE(ext.zones.size(), std::size_t(2));
+        QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
+        QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
 
         // A backup of the original config should exist.
         const auto backupPath = path.string() + ".bak";
@@ -508,12 +520,14 @@ class TestConfig : public QObject {
         const Scheme* scheme = result.config.findScheme("x");
         QVERIFY(scheme != nullptr);
         const auto& zones = scheme->external.zones;
-        QCOMPARE(zones.size(), std::size_t(3));
+        QCOMPARE(zones.size(), std::size_t(4));
         QCOMPARE(zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(zones[0].name, std::string("Rear ring"));
+        QCOMPARE(zones[0].name, std::string("Rear ring 1"));
         QCOMPARE(zones[0].color.ac, (Rgb{255, 0, 0}));
-        QCOMPARE(zones[1].name, std::string("Interior logo"));
-        QCOMPARE(zones[2].name, std::string("Lid logo"));
+        QCOMPARE(zones[1].lightId, std::uint8_t(1));
+        QCOMPARE(zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(zones[2].name, std::string("Interior logo"));
+        QCOMPARE(zones[3].name, std::string("Lid logo"));
     }
 
     // Deleting a shipped preset is recorded so it stays deleted. Upgrading the layout of an
@@ -594,7 +608,7 @@ class TestConfig : public QObject {
         std::string error;
         QVERIFY2(deserializeConfig(readAll(path), onDisk, error), error.c_str());
         QCOMPARE(onDisk.schemaVersion, Config::kSchemaVersion);
-        QCOMPARE(onDisk.findScheme("x")->external.zones.size(), std::size_t(1));
+        QCOMPARE(onDisk.findScheme("x")->external.zones.size(), std::size_t(2));
 
         std::filesystem::remove(backupPath);
         QVERIFY(loadConfig(path).error.empty());

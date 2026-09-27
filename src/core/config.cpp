@@ -218,6 +218,7 @@ bool isOldDefaultName(const std::string& name) {
         "Unidentified (ID 4)", "Unidentified (ID 5)",
         "Rear ring (zone 0)", "Rear ring (zone 1)",
         "No visible light (zone 4)", "No visible light (zone 5)",
+        "Rear ring",
     };
     return std::ranges::find(olds, name) != std::end(olds);
 }
@@ -230,41 +231,63 @@ bool migrateConfig(Config& config) {
     for (Scheme& scheme : config.schemes) {
         auto& zones = scheme.external.zones;
 
-        // Step 1: remove zones 4 and 5, which light nothing visible.
-        std::erase_if(zones, [](const ExternalZone& z) {
-            return z.lightId == 4 || z.lightId == 5;
-        });
+        if (config.schemaVersion < 2) {
+            // v1 -> v2: remove zones 4 and 5, which light nothing visible.
+            std::erase_if(zones, [](const ExternalZone& z) {
+                return z.lightId == 4 || z.lightId == 5;
+            });
 
-        // Step 2: collapse zones 0 and 1 into a single Rear ring entry.
-        const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
-            for (ExternalZone& z : zones)
-                if (z.lightId == id) return &z;
-            return nullptr;
-        };
+            // Collapse zones 0 and 1 into a single Rear ring entry.
+            const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
+                for (ExternalZone& z : zones)
+                    if (z.lightId == id) return &z;
+                return nullptr;
+            };
 
-        ExternalZone* zone0 = findZone(0);
-        ExternalZone* zone1 = findZone(1);
+            ExternalZone* zone0 = findZone(0);
+            ExternalZone* zone1 = findZone(1);
 
-        if (zone1) {
-            if (zone0) {
-                // Both exist: zone 0's data wins.
-                std::erase_if(zones, [](const ExternalZone& z) { return z.lightId == 1; });
-            } else {
-                // Only zone 1 exists: reparent it to lightId 0.
-                zone1->lightId = 0;
+            if (zone1) {
+                if (zone0) {
+                    std::erase_if(zones, [](const ExternalZone& z) { return z.lightId == 1; });
+                } else {
+                    zone1->lightId = 0;
+                }
             }
         }
 
-        // Step 3: rename zones whose names match an old default to the current default.
+        // v2 -> v3: split the merged rear ring (lightId 0) back into two independent zones
+        // so each segment of the hairline LED can be coloured separately.
+        if (config.schemaVersion < 3) {
+            const auto findZone = [&](std::uint8_t id) -> ExternalZone* {
+                for (ExternalZone& z : zones)
+                    if (z.lightId == id) return &z;
+                return nullptr;
+            };
+
+            ExternalZone* zone0 = findZone(0);
+            if (zone0 && !findZone(1)) {
+                ExternalZone zone1 = *zone0;
+                zone1.lightId = 1;
+                zone1.name = defaultZoneName(1);
+                const auto it = std::ranges::find_if(zones,
+                    [](const ExternalZone& z) { return z.lightId == 0; });
+                zones.insert(it + 1, zone1);
+            }
+        }
+
+        // Rename zones whose names match an old default to the current default.
         for (ExternalZone& zone : zones) {
             if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
         }
 
-        // Step 4: de-duplicate by lightId, keeping the first occurrence.
-        std::set<std::uint8_t> seen;
-        std::erase_if(zones, [&seen](const ExternalZone& z) {
-            return !seen.insert(z.lightId).second;
-        });
+        // De-duplicate by lightId, keeping the first occurrence.
+        if (config.schemaVersion < 2) {
+            std::set<std::uint8_t> seen;
+            std::erase_if(zones, [&seen](const ExternalZone& z) {
+                return !seen.insert(z.lightId).second;
+            });
+        }
     }
 
     config.schemaVersion = Config::kSchemaVersion;

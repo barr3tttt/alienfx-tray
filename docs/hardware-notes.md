@@ -94,16 +94,16 @@ Observed on an m15 R7 AMD:
 The rear ring is driven by two light IDs, 0 and 1.  Before the colour-persistence
 fix a mono-colour probe of ID 0 appeared to do nothing because the colour washed
 out; once colours held, lighting either ID white produced a visible white ring.
-The two IDs carry distinct colours so the ring can show two at once. The application
-nevertheless presents them as a single "Rear ring" zone and the lighting engine sends each
-colour to both IDs (`zoneHardwareIds` in `src/core/scheme.h`); only the probe addresses them
-separately.
+Each segment can be coloured independently. The application
+presents them as two separate zones ("Rear ring 1" and "Rear ring 2")
+so each segment can be coloured independently.  The probe addresses them with distinct
+colours for identification.
 
 IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
 0x5b--0x60 loop, but they produce no visible light on this chassis, so the application does
-not list them as zones. Configs written before schema version 2 are migrated once on load:
-zones 4 and 5 are dropped, zones 0 and 1 are collapsed into one rear-ring entry, and the
-original file is kept as `config.json.bak`.
+not list them as zones. Configs written before schema version 3 are migrated once on load:
+zones 4 and 5 are dropped (schema v1->v2), the merged rear ring is split back into two
+entries (schema v2->v3), and the original file is kept as `config.json.bak`.
 
 ## Measured latencies
 
@@ -121,8 +121,8 @@ With `ALIENFX_TRAY_TIMING=1`:
 
 Two consequences shape the design:
 
-- **Send only what changed.** A full repaint of the three default zones is four hardware
-  writes (the rear ring counts twice), 700 ms at 175 ms each, which would put a colour wheel
+- **Send only what changed.** A full repaint of the four default zones is four hardware
+  writes (each zone maps to exactly one hardware ID), 700 ms at 175 ms each, which would put a colour wheel
   drag visibly behind the cursor. Editing one zone costs one write, two for the rear ring.
 - **Different idle timeouts per domain.** Releasing the external controller costs 1600 ms
   to reopen and gains nothing, so it is held for 20 s. The keyboard controller is released
