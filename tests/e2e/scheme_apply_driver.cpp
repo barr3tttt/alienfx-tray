@@ -121,11 +121,13 @@ class LoggingExternal final : public IExternalDevice {
         return inner_->setBrightness(brightness, lightIds);
     }
 
-    bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override {
-        const bool ok = inner_->applyZone(lightId, acColor, batteryColor);
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override {
+        const bool ok = inner_->applyZones(zones);
         if (ok) {
             QMutexLocker lock(&log_->mutex);
-            log_->zones.push_back(PaintLog::ZoneWrite{lightId, acColor, batteryColor});
+            for (const ExternalZoneWrite& zone : zones)
+                log_->zones.push_back(
+                    PaintLog::ZoneWrite{zone.lightId, zone.acColor, zone.batteryColor});
         }
         return ok;
     }

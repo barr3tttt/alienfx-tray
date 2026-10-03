@@ -82,27 +82,17 @@ class SdkExternalDevice final : public SdkDeviceBase, public IExternalDevice {
 
     bool setBrightness(Brightness brightness,
                        const std::vector<std::uint8_t>& lightIds) override;
-    bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override;
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override;
     bool commit() override;
 
    private:
-    // AlienFX_SDK::Functions::SetPowerAction reaches WaitForReady(), whose APIv4 branch is
-    // `while (!IsDeviceReady()) usleep(20);` - an unbounded spin with no timeout.
-    //
-    // This pre-check cannot bound that. The spin is not at the entry to the path: the SDK
-    // runs its whole 0x5b..0x60 write loop, then PrepareAndSend(COMMV4_control), then
-    // WaitForBusy(), and only then reaches the spin. A controller that answers ready here
-    // and latches busy mid-call still wedges the calling thread indefinitely. All the
-    // pre-check buys is that an already-unresponsive controller is reported busy instead of
-    // being called into, which makes entering the path rarer, not impossible.
-    //
-    // The residual risk is contained outside this class: the device thread is the only
-    // thread that may be wedged, nothing is allowed to wait on it without a bound (see
-    // DeviceThread), and LightingController's watchdog reports the domain as unresponsive
-    // so a wedge is visible rather than silent.
-    //
-    // Also used by commit() before calling Reset(), because Reset() calls WaitForReady()
-    // internally for APIv4 -- another path to the same unbounded spin.
+    // Every command this controller answers to can leave it programming for a while, and
+    // the SDK's own wait for that - WaitForReady(), reachable from SetPowerAction and
+    // Reset() - is `while (!IsDeviceReady()) usleep(20);` on APIv4: an unbounded spin.
+    // Nothing here calls either of those SDK functions; the power transaction and the
+    // finish-and-play are hand-rolled over PrepareAndSend precisely so this deadline is
+    // the only wait on the path. A controller that does not settle in time is reported
+    // busy rather than allowed to wedge the device thread.
     [[nodiscard]] bool waitUntilReady();
 
     static constexpr std::chrono::milliseconds kReadyTimeout{250};

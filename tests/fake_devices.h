@@ -118,8 +118,14 @@ class FakeExternalDevice final : public IExternalDevice {
         return true;
     }
 
-    bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override {
-        zoneCalls.push_back(ZoneCall{lightId, acColor, batteryColor});
+    // The batch is recorded whole, then flattened into per-zone calls so the engine tests
+    // can assert on either shape: batchCalls is the transactions the hardware would have
+    // seen, zoneCalls the individual lights inside them.
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override {
+        ++batchCount;
+        lastBatchSize = zones.size();
+        for (const ExternalZoneWrite& zone : zones)
+            zoneCalls.push_back(ZoneCall{zone.lightId, zone.acColor, zone.batteryColor});
         if (failZone) {
             status_ = DomainStatus{DeviceState::Error, "fake: zone refused"};
             return false;
@@ -141,6 +147,8 @@ class FakeExternalDevice final : public IExternalDevice {
     int openCount = 0;
     int closeCount = 0;
     int commitCount = 0;
+    int batchCount = 0;
+    std::size_t lastBatchSize = 0;
     bool failOpen = false;
     bool failBrightness = false;
     bool failZone = false;

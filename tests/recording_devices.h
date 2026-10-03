@@ -96,9 +96,11 @@ class RecordingExternal final : public IExternalDevice {
 
     bool setBrightness(Brightness, const std::vector<std::uint8_t>&) override { return true; }
 
-    bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) override {
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override {
         QMutexLocker lock(&record_->mutex);
-        record_->zones.push_back(DeviceRecord::ZoneWrite{lightId, acColor, batteryColor});
+        for (const ExternalZoneWrite& zone : zones)
+            record_->zones.push_back(
+                DeviceRecord::ZoneWrite{zone.lightId, zone.acColor, zone.batteryColor});
         return true;
     }
 

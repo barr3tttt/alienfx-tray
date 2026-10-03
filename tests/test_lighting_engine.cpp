@@ -136,7 +136,8 @@ class TestLightingEngine : public QObject {
         const ApplyResult result = engine.apply(lit(defaultScheme()));
 
         QCOMPARE(asInt(result.external.state), asInt(DeviceState::Error));
-        QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
+        // One transaction was attempted and refused; nothing is committed half-staged.
+        QCOMPARE(externalView->batchCount, 1);
         QCOMPARE(externalView->commitCount, 0);
         QVERIFY(result.keyboard.ok());
     }
@@ -349,12 +350,13 @@ class TestLightingEngine : public QObject {
 
         LightingEngine engine(std::move(keyboard), std::move(external));
         engine.apply(lit(scheme));
-        QCOMPARE(externalView->zoneCalls.size(), std::size_t(1));
+        QCOMPARE(externalView->batchCount, 1);
 
         externalView->failZone = false;
         engine.apply(lit(scheme));
+        QCOMPARE(externalView->batchCount, 2);
         QCOMPARE(externalView->zoneCalls.size(),
-                 1 + collectHardwareIds(scheme.external).size());
+                 collectHardwareIds(scheme.external).size() * 2);
     }
 
     // A renamed zone is the same light. Renaming must not cost a USB round trip.
@@ -436,6 +438,58 @@ class TestLightingEngine : public QObject {
                      "zones 4 and 5 must not appear in the default scheme");
         }
         QCOMPARE(scheme.external.zones.size(), std::size_t(4));
+    }
+
+    // The hardware regression this guards: the AW-ELC's six power blocks are shared
+    // staging slots, and writing lights one at a time re-stages every block per light, so
+    // the closing play applies only the last light written - the rest stay stuck on
+    // whatever they showed before. A multi-zone apply must stage every zone in a single
+    // transaction, one batch, then one commit.
+    void aMultiZoneApplyStagesEveryZoneInOneTransaction() {
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(defaultScheme()));
+
+        QCOMPARE(externalView->batchCount, 1);
+        QCOMPARE(externalView->lastBatchSize, std::size_t(4));
+        QCOMPARE(externalView->zoneCalls.size(), std::size_t(4));
+        QCOMPARE(externalView->commitCount, 1);
+    }
+
+    // The same shared-staging rule one level up: when a scheme shrinks, the lights it drops
+    // are driven off with black pairs, and those offs must be staged in the SAME
+    // transaction as the surviving zones' colours. Staged separately they would be
+    // overwritten before the commit and the dropped lights would stay lit.
+    void offsAndColoursShareOneTransaction() {
+        Scheme scheme = defaultScheme();
+
+        auto keyboard = std::make_unique<FakeKeyboardDevice>();
+        auto external = std::make_unique<FakeExternalDevice>();
+        FakeExternalDevice* externalView = external.get();
+
+        LightingEngine engine(std::move(keyboard), std::move(external));
+        engine.apply(lit(scheme));
+        QCOMPARE(externalView->batchCount, 1);
+
+        // Drop the last zone and change the first one's colour: one off, one colour write,
+        // and they must arrive together.
+        const std::uint8_t removedId = scheme.external.zones.back().lightId;
+        scheme.external.zones.pop_back();
+        scheme.external.zones.front().color = uniform(Rgb{7, 8, 9});
+        engine.apply(lit(scheme));
+
+        QCOMPARE(externalView->batchCount, 2);
+        QCOMPARE(externalView->lastBatchSize, std::size_t(2));
+        const std::size_t total = externalView->zoneCalls.size();
+        QCOMPARE(externalView->zoneCalls[total - 2].lightId, removedId);
+        QCOMPARE(externalView->zoneCalls[total - 2].acColor, (Rgb{0, 0, 0}));
+        QCOMPARE(externalView->zoneCalls[total - 1].lightId,
+                 scheme.external.zones.front().lightId);
+        QCOMPARE(externalView->zoneCalls[total - 1].acColor, (Rgb{7, 8, 9}));
+        QCOMPARE(externalView->commitCount, 2);
     }
 
     // Switching schemes with completely different per-zone colours must update every
@@ -555,7 +609,7 @@ class TestLightingEngine : public QObject {
             bool setBrightness(Brightness, const std::vector<std::uint8_t>&) override {
                 return true;
             }
-            bool applyZone(std::uint8_t, Rgb, Rgb) override { return true; }
+            bool applyZones(const std::vector<ExternalZoneWrite>&) override { return true; }
             bool commit() override { return true; }
             [[nodiscard]] DomainStatus status() const override {
                 return DomainStatus{DeviceState::Ready, {}};

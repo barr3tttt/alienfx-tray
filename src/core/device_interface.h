@@ -88,6 +88,14 @@ class IKeyboardDevice {
     [[nodiscard]] virtual DomainStatus status() const = 0;
 };
 
+// One light's worth of an external write: the light ID plus the two colours the APIv4
+// power path makes every light carry, AC and battery.
+struct ExternalZoneWrite {
+    std::uint8_t lightId;
+    Rgb acColor;
+    Rgb batteryColor;
+};
+
 class IExternalDevice {
    public:
     virtual ~IExternalDevice() = default;
@@ -102,7 +110,13 @@ class IExternalDevice {
 
     // These are power-type lights: each carries an AC colour and a battery colour. Plain
     // colour sets across all 23 IDs do nothing at all on this controller.
-    virtual bool applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) = 0;
+    //
+    // The whole write set arrives in one call because that is the only shape the hardware
+    // honours: the six power blocks are shared staging slots, and a per-light write
+    // rewrites all of them, so setting lights one at a time leaves only the last light
+    // standing once the transaction commits. Batching is what makes every zone of a
+    // multi-zone scheme take. See docs/hardware-notes.md.
+    virtual bool applyZones(const std::vector<ExternalZoneWrite>& zones) = 0;
 
     virtual bool commit() = 0;
 

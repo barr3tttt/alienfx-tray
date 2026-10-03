@@ -91,10 +91,12 @@ class CountingExternal final : public IExternalDevice {
 
     bool setBrightness(Brightness, const std::vector<std::uint8_t>&) override { return true; }
 
-    bool applyZone(std::uint8_t, Rgb acColor, Rgb) override {
-        painted_->zoneCalls.fetch_add(1);
-        painted_->lastRed.store(acColor.r);
-        if (acColor.r == kFirstFrameRed) painted_->sawFirstFrame.store(true);
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override {
+        for (const ExternalZoneWrite& zone : zones) {
+            painted_->zoneCalls.fetch_add(1);
+            painted_->lastRed.store(zone.acColor.r);
+            if (zone.acColor.r == kFirstFrameRed) painted_->sawFirstFrame.store(true);
+        }
         return true;
     }
 

@@ -43,8 +43,8 @@ class LateExternalDevice final : public IExternalDevice {
 
     bool setBrightness(Brightness, const std::vector<std::uint8_t>&) override { return true; }
 
-    bool applyZone(std::uint8_t, Rgb, Rgb) override {
-        ++zoneCalls;
+    bool applyZones(const std::vector<ExternalZoneWrite>& zones) override {
+        zoneCalls += static_cast<int>(zones.size());
         return true;
     }
 

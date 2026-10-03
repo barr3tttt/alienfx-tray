@@ -75,24 +75,27 @@ status=$?
 
 count_lines() { grep -c -- "$2" <<<"$1"; }
 
-# The two left-out ring lights driven off, then the brightness command, then exactly the
-# test scheme's zones, then one commit, and nothing reported as refused. The built-in
-# defaults carry all four visible lights, so they would show no writes before brightness
-# and four after it.
+# The brightness/turn-on command first, then ONE batched transaction staging the two
+# left-out ring lights (driven off as black) together with the test scheme's two zones,
+# then one commit, and nothing reported as refused. The batch's timing label carries its
+# light count, so "(4 lights)" is the wire-level proof that offs and colours were staged
+# together - the AW-ELC's power blocks are shared staging slots that every transaction
+# re-stages from scratch, so anything written in a separate earlier transaction would be
+# overwritten before the commit and never take.
 check_apply() {
   local label="$1" output="$2" before after
-  before="$(sed -n '/external\/setBrightness/q;/external\/applyZone/p' <<<"$output" | wc -l)"
-  after="$(sed -n '/external\/setBrightness/,$p' <<<"$output" | grep -c -- 'external/applyZone')"
-  if [[ "$before" -ne 2 ]]; then
-    fail "$label: expected the 2 left-out ring lights driven off before brightness, saw $before"
-  elif [[ "$after" -ne 2 ]]; then
-    fail "$label: expected 2 external zone writes from the test scheme, saw $after"
+  before="$(sed -n '/external\/setBrightness/q;/external\/applyZones/p' <<<"$output" | wc -l)"
+  after="$(sed -n '/external\/setBrightness/,$p' <<<"$output" | grep -c -- 'external/applyZones (4 lights)')"
+  if [[ "$before" -ne 0 ]]; then
+    fail "$label: expected no zone transaction before the brightness command, saw $before"
+  elif [[ "$after" -ne 1 ]]; then
+    fail "$label: expected one 4-light transaction (2 offs + 2 zones) after brightness, saw $after"
   elif [[ "$(count_lines "$output" 'external/commit')" -ne 1 ]]; then
     fail "$label: external commit did not run exactly once"
   elif [[ "$output" == *"refused"* ]]; then
     fail "$label: a controller refused a command"
   else
-    pass "$label: left-out lights driven off, both test zones written, commit succeeded"
+    pass "$label: left-out lights driven off and both test zones staged in one transaction, commit succeeded"
   fi
 }
 

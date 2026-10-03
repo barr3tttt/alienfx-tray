@@ -28,7 +28,7 @@ struct Script {
     std::atomic<bool> keyboardRefusesBrightness{false};
     std::atomic<bool> keyboardLeavesInterfaceDetached{false};
 
-    // The wedge: applyZone takes the command and never answers, exactly as the SDK's APIv4
+    // The wedge: applyZones takes the command and never answers, exactly as the SDK's APIv4
     // ready-wait does when a controller latches busy mid-call.
     std::atomic<bool> wedgeExternal{false};
     std::atomic<bool> externalWedged{false};
@@ -102,7 +102,7 @@ class ScriptedExternal final : public IExternalDevice {
         return true;
     }
 
-    bool applyZone(std::uint8_t, Rgb, Rgb) override {
+    bool applyZones(const std::vector<ExternalZoneWrite>&) override {
         if (script_->wedgeExternal.load()) {
             script_->externalWedged.store(true);
             while (script_->wedgeExternal.load() && !script_->releaseWedge.load())
