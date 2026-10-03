@@ -430,6 +430,33 @@ class TestConfig : public QObject {
         QVERIFY(config.findScheme(config.activeSchemeName) != nullptr);
     }
 
+    // The standing rule for Delete: the selection returns to the default scheme - Dracula -
+    // rather than to whatever happens to sort first in the file.
+    void removingTheActiveSchemeFallsBackToTheDefault() {
+        Config config = Config::defaults();
+        // Put a user scheme ahead of the default so "first" and "default" are different
+        // schemes and the assertion can tell them apart.
+        Scheme mine = defaultScheme();
+        mine.name = "Mine";
+        config.schemes.insert(config.schemes.begin(), mine);
+        config.activeSchemeName = "Mine";
+
+        QVERIFY(config.removeScheme("Mine"));
+        QCOMPARE(config.activeSchemeName, std::string(kDefaultSchemeName));
+    }
+
+    // The one exception: when the default itself is the scheme being deleted, it cannot be
+    // the fallback, and the first remaining scheme takes over.
+    void removingTheActiveDefaultItselfFallsBackToTheFirstRemaining() {
+        Config config = Config::defaults();
+        config.activeSchemeName = std::string(kDefaultSchemeName);
+
+        QVERIFY(config.removeScheme(std::string(kDefaultSchemeName)));
+        QVERIFY(!config.activeSchemeName.empty());
+        QCOMPARE(config.activeSchemeName, config.schemes.front().name);
+        QVERIFY(config.findScheme(config.activeSchemeName) != nullptr);
+    }
+
     void colourHexRoundTrips() {
         Rgb parsed;
         QVERIFY(parseHex("#bd93f9", parsed));
@@ -460,8 +487,9 @@ class TestConfig : public QObject {
                  config.findScheme("Solid red")->keyboard.brightness);
     }
 
-    // An active name that matches no scheme falls back to the first scheme and is recorded as
-    // active, so the tray checkmark and the scheme list agree with what is painted.
+    // An active name that matches no scheme falls back to the default scheme and is
+    // recorded as active, so the tray checkmark and the scheme list agree with what is
+    // painted.
     void aStaleActiveSchemeNameIsRepairedOnLoad() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -474,8 +502,22 @@ class TestConfig : public QObject {
 
         const LoadResult result = loadConfig(path);
         QVERIFY(result.error.empty());
-        QCOMPARE(result.config.activeSchemeName, config.schemes.front().name);
+        QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
         QCOMPARE(result.config.activeScheme().name, result.config.activeSchemeName);
+    }
+
+    // The stale-name fallback prefers the default scheme even when it is not the first
+    // scheme in the file.
+    void aStaleActiveSchemeNamePrefersTheDefaultOverTheFirstScheme() {
+        Config config;
+        Scheme mine = defaultScheme();
+        mine.name = "Mine";
+        config.schemes.push_back(mine);
+        config.schemes.push_back(defaultScheme());
+        config.activeSchemeName = "Gone";
+
+        QCOMPARE(config.activeScheme().name, std::string(kDefaultSchemeName));
+        QCOMPARE(config.fallbackSchemeName(), std::string(kDefaultSchemeName));
     }
 
     // --- migration tests ---

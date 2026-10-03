@@ -168,8 +168,13 @@ Scheme* Config::findScheme(const std::string& name) {
 
 Scheme Config::activeScheme() const {
     if (const Scheme* scheme = findScheme(activeSchemeName)) return *scheme;
-    if (!schemes.empty()) return schemes.front();
+    if (const Scheme* scheme = findScheme(fallbackSchemeName())) return *scheme;
     return defaultScheme();
+}
+
+std::string Config::fallbackSchemeName() const {
+    if (findScheme(std::string(kDefaultSchemeName))) return std::string(kDefaultSchemeName);
+    return schemes.empty() ? std::string() : schemes.front().name;
 }
 
 LightingState Config::lightingState() const { return LightingState{activeScheme(), lightsOn}; }
@@ -191,7 +196,10 @@ bool Config::removeScheme(const std::string& name) {
     for (auto it = schemes.begin(); it != schemes.end(); ++it) {
         if (it->name != name) continue;
         schemes.erase(it);
-        if (activeSchemeName == name) activeSchemeName = schemes.empty() ? "" : schemes.front().name;
+        // Deleting the selected scheme returns the selection to the default - Dracula -
+        // not to whatever happens to sort first. Only when the default itself is gone does
+        // the first remaining scheme take over.
+        if (activeSchemeName == name) activeSchemeName = fallbackSchemeName();
         // A deliberate delete has to outlive the restart, or the re-seed puts the shipped
         // preset straight back and Delete only appears to work.
         const bool alreadyRecorded =
@@ -213,7 +221,7 @@ void Config::restoreMissingBuiltins() {
 Config Config::defaults() {
     Config config;
     config.schemes = builtinSchemes();
-    config.activeSchemeName = config.schemes.front().name;
+    config.activeSchemeName = std::string(kDefaultSchemeName);
     config.lightsOn = true;
     return config;
 }
@@ -392,9 +400,9 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
             if (entry.is_string()) config.removedBuiltins.push_back(entry.get<std::string>());
     }
 
-    config.activeSchemeName = readString(root, "activeScheme", config.schemes.front().name);
+    config.activeSchemeName = readString(root, "activeScheme", config.fallbackSchemeName());
     if (!config.findScheme(config.activeSchemeName))
-        config.activeSchemeName = config.schemes.front().name;
+        config.activeSchemeName = config.fallbackSchemeName();
     config.lightsOn = readBool(root, "lightsOn", true);
     out = std::move(config);
     return true;

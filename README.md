@@ -26,6 +26,8 @@ Wayland.
 - Named schemes, saved to disk and switchable from the tray. Selecting a scheme sets every
   zone - both rear-ring segments, interior logo, lid logo and keyboard - every time, even
   when the scheme was already active, so the gesture always repairs the lights.
+- The last selected scheme is what comes up at login and after a restart. Deleting the
+  selected scheme returns the lights to the default, Dracula purple.
 - Applied at login and after resume, through the mechanisms already on the machine.
 - A device that is missing or busy is reported in the UI. Nothing blocks on USB.
 

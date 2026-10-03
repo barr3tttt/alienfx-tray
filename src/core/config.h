@@ -38,6 +38,11 @@ struct Config {
     [[nodiscard]] Scheme activeScheme() const;
     [[nodiscard]] LightingState lightingState() const;
 
+    // Where the selection lands when the named scheme is not there: the default scheme
+    // (kDefaultSchemeName) when it is present, the first scheme when the user deliberately
+    // deleted the default, or empty when there are no schemes at all.
+    [[nodiscard]] std::string fallbackSchemeName() const;
+
     // Adds or replaces by name. Returns true if an existing scheme was replaced.
     bool upsertScheme(const Scheme& scheme);
     bool removeScheme(const std::string& name);

@@ -54,12 +54,43 @@ the other route to a controller that looks dead.
 ## External lights are power-type lights
 
 They do not respond to ordinary colour commands. `SetColor` across all 23 mapped light IDs
-does nothing whatsoever. They need `SetPowerAction`, which walks control IDs `0x5b` through
-`0x60` - AC sleep, AC power, charge, battery sleep, battery power, battery critical.
+does nothing whatsoever. They need the APIv4 power path, which walks control IDs `0x5b`
+through `0x60` - AC sleep, AC power, charge, battery sleep, battery power, battery critical.
 
 That is also where the AC/battery colour pair comes from. Each light stores two colours and
 the controller switches between them itself; exposing that costs nothing because the
 protocol requires both slots to be filled anyway.
+
+## The power blocks are shared staging, not per-light memory
+
+Measured 2026-10-03, after the owner reported that selecting a scheme moved the keyboard
+and the lid logo but left the rear ring and the interior logo stuck.
+
+The six control IDs `0x5b`..`0x60` are not six slots per light. They are six global staging
+blocks, and each block binds a light selection to a set of actions. The SDK's
+`SetPowerAction(light)` fills all six blocks with that one light's colours, then sends the
+"play" control report. Calling it once per light - the obvious way to apply a multi-zone
+scheme - re-stages every block for each new light, and the closing finish-and-play then
+applies only the last light written:
+
+- The last zone written took the scheme's colour. With zones in ID order that is the lid
+  logo (ID 3), which made the bug read as "only the lid logo follows schemes".
+- Every other zone kept whatever it was already showing. After a reboot that is the
+  firmware default: the rear ring sits light blue, the interior logo stays dark. A zone the
+  user had set by hand kept that colour forever, which is why the same bug was also
+  reported as "the ring is stuck on the colour I set it to manually".
+- Single-zone writes were never affected, which is why the zone-identification probe and
+  manual edits all worked and the scheme path alone looked broken.
+
+The fix is to stage every zone into each block within one transaction: remove block, start
+block, then per zone a colour-select report (`COMMV4_colorSel`, which exists precisely to
+bind a block entry to a light ID) followed by that zone's colour-set reports, then
+finish-and-save. After all six blocks: one "play", then the finish-and-play commit. A
+one-zone batch is byte-identical to the single `SetPowerAction` call it replaces; the wire
+shape only changes from two lights up.
+
+The application builds this transaction itself over `PrepareAndSend` (see
+`SdkExternalDevice::applyZones`) instead of calling `SetPowerAction` once per light.
 
 ## Colour channel order
 
@@ -98,6 +129,12 @@ The application presents them as two separate zones ("Rear ring 1" and "Rear rin
 each segment can be coloured independently. The probe addresses them with distinct colours
 for identification.
 
+Observed 2026-10-03 with the four-colour probe: the two IDs are not halves of the ring.
+Each drives a pair of diagonal quadrants - ID 0 the top-left and bottom-right, ID 1 the
+other two. Also noted the same day: a pure red (255,0,0) reads orange on the ring's LEDs,
+while the logos render it red. The ring's channel response differs from the other
+fixtures; no correction is applied anywhere in the application.
+
 IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
 0x5b--0x60 loop, but they produce no visible light on this chassis, so the application does
 not list them as zones. Configs written before schema version 3 are migrated once on load:
@@ -111,28 +148,30 @@ that write-through rather than edited on purpose.
 
 ## Measured latencies
 
-With `ALIENFX_TRAY_TIMING=1`, measured 2026-09-27 on this laptop across three cold
-`--apply` runs (each opens, paints, closes):
+With `ALIENFX_TRAY_TIMING=1`, measured 2026-10-03 on this laptop with the batched power
+transaction (one cold `--apply`; earlier per-zone figures are from 2026-09-27):
 
 | Operation | Time |
 |---|---|
-| keyboard open (find path, probe, claim) | ~110-130 ms |
+| keyboard open (find path, probe, claim) | ~110-135 ms |
 | keyboard brightness | ~20 ms |
 | keyboard colour | ~20 ms |
 | keyboard close (incl. driver reattach) | ~100 ms |
-| external open | ~45 ms |
-| external brightness | ~3 ms |
-| external zone write | ~110-140 ms |
-| external commit (Reset + UpdateColors) | ~15 ms |
+| external open | ~45-52 ms |
+| external brightness | ~2-3 ms |
+| external zone transaction, all 4 zones in one batch | ~261 ms |
+| external zone transaction, single zone | ~110-140 ms |
+| external commit (remove + start + finish-and-play) | ~12-15 ms |
 
-An earlier revision of this table recorded ~175 ms per external zone write and a ~1600 ms
-first write after every open. Neither reproduces now: the first write after an open costs
-the same ~110-140 ms as every later one. The two design decisions those numbers drove
-still stand:
+The single-zone figure is the delta path a colour-wheel drag uses: a one-zone batch puts
+exactly the bytes on the wire that a lone `SetPowerAction` used to, so a drag frame still
+costs about 110-140 ms. A full four-zone repaint takes one ~260 ms transaction plus a
+commit instead of four ~110-140 ms writes plus a commit, so the batch is also the faster
+shape, at about half the old cost.
 
-- **Send only what changed.** A full repaint of the four default zones is four hardware
-  writes plus a commit, about 500 ms at the measured rates, which would put a colour wheel
-  drag visibly behind the cursor. Editing one zone costs one write.
+The two design decisions the earlier measurements drove still stand:
+
+- **Send only what changed.** Preview frames send the zone being edited, nothing else.
 - **Different idle timeouts per domain.** Releasing the keyboard controller quickly is
   worth real money: it is the interface the user types on, and every claim steals it from
   usbhid. Releasing the external controller buys nothing - nothing else wants it, no input
@@ -181,33 +220,31 @@ resolves the one path it wants and constructs `Functions` directly.
 while (!IsDeviceReady()) usleep(20);
 ```
 
-No iteration cap, no timeout. It is reachable from `SetPowerAction`, which is the hot path
-for every external colour change, so a wedged controller spins a thread forever.
+No iteration cap, no timeout. It is reachable from `SetPowerAction` and from `Reset()`, the
+SDK's pieces of the external write path.
 
-The external device checks `IsDeviceReady()` against a deadline of its own before calling
-in, and reports the controller as busy rather than entering the path. That is a filter, not
-a guarantee, and it is worth being precise about why: the unbounded spin is not at the
-entry. `SetPowerAction`'s `API_V4` branch runs the full `0x5b..0x60` write loop, then
-`PrepareAndSend(COMMV4_control)`, then `WaitForBusy()`, and only then `WaitForReady()`. A
-controller that answers ready at the pre-check and latches `ALIENFX_V4_BUSY` during the
-write therefore still wedges the calling thread, once per zone. The pre-check makes that
-rarer. Nothing bounds it.
+The application no longer calls either. The power transaction and the finish-and-play
+commit are hand-rolled over `PrepareAndSend` (which performs a single synchronous write and
+returns), and every readiness wait on the path is `SdkExternalDevice::waitUntilReady()`,
+bounded by a 250 ms deadline. A controller that does not settle is reported busy; no call
+into the SDK can spin the device thread forever.
 
-So the containment is structural instead. The device thread is the only thread that can be
-wedged, and nothing that must finish is allowed to wait on it without a bound: `DeviceThread`
-owns it, hands out no handle to it, and its only stop path is a bounded one that walks away
-and says so if the thread does not come back. `LightingController`'s apply watchdog reports
-every affected domain as `DeviceState::Unresponsive` through the ordinary per-domain status
-path, so a wedge reaches the UI rather than leaving the lights silently frozen. That state
-exists separately from `Error` because a refusal came back and a hang did not, and telling
-someone a controller "refused the last command" when it is hanging sends them looking for a
-udev rule instead of a stuck device. Escalation covers every state that has not already
-admitted failure - `Ready`, `Unknown`, `Busy` and `Waiting` - because each of them leaves the
-user expecting lighting that is not coming, `Waiting` most of all: it promises the frame will
-be repainted "automatically until it lets go", which a wedged worker never delivers.
-`Missing` and `Error` are left alone, having already said the domain is not working. The
-kernel reattaches `usbhid` when the usbfs descriptor closes on process exit, so even the
-walk-away recovers.
+The containment for a device that hangs anyway still stands: the device thread is the only
+thread that can be wedged, nothing that must finish is allowed to wait on it without a
+bound (`DeviceThread` owns it, hands out no handle to it, and its only stop path is a
+bounded one that walks away and says so if the thread does not come back), and
+`LightingController`'s apply watchdog reports every affected domain as
+`DeviceState::Unresponsive` through the ordinary per-domain status path, so a wedge reaches
+the UI rather than leaving the lights silently frozen. That state exists separately from
+`Error` because a refusal came back and a hang did not, and telling someone a controller
+"refused the last command" when it is hanging sends them looking for a udev rule instead of
+a stuck device. Escalation covers every state that has not already admitted failure -
+`Ready`, `Unknown`, `Busy` and `Waiting` - because each of them leaves the user expecting
+lighting that is not coming, `Waiting` most of all: it promises the frame will be repainted
+"automatically until it lets go", which a wedged worker never delivers. `Missing` and
+`Error` are left alone, having already said the domain is not working. The kernel
+reattaches `usbhid` when the usbfs descriptor closes on process exit, so even the walk-away
+recovers.
 
 ## Nothing persists unless asked
 

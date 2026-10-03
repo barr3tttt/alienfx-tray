@@ -133,6 +133,13 @@ inline constexpr ZoneProfile kExternalZoneProfiles[] = {
 
 [[nodiscard]] ExternalSettings defaultExternalSettings(Rgb color);
 
+// The scheme the whole application falls back to: the factory default, the selection a
+// stale or deleted activeSchemeName resolves to, and what deleting the active scheme
+// returns to. It is a built-in, so it is always present unless the user deliberately
+// deleted it; every fallback prefers it and only settles for the first scheme when it is
+// genuinely gone.
+inline constexpr std::string_view kDefaultSchemeName = "Dracula purple";
+
 // Dracula purple on both domains, which is where this machine started.
 [[nodiscard]] Scheme defaultScheme();
 
