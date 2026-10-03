@@ -22,6 +22,17 @@ struct ApplyResult {
     }
 };
 
+// How much of a scheme an apply may skip against what the hardware is believed to show.
+//
+// Changed is the live-preview path: a colour-wheel drag costs about 110-140 ms per external
+// zone on this hardware, so only the zone being edited is sent and the lights stay within
+// one frame of the cursor. Full forgets the tracked state first, so every zone and the
+// keyboard are commanded whether or not they appear to have changed. Full is what a
+// deliberate scheme selection uses, because "select this scheme" must mean the lights end
+// up showing exactly that scheme even when something else painted them in between - the
+// delta path has no way to notice that, which is how zones got stuck dark.
+enum class ApplyDepth : std::uint8_t { Changed, Full };
+
 // Turns a Scheme into device commands. Knows nothing about Qt, threads or USB - it talks to
 // two interfaces, and the whole of it is exercised in tests against fakes.
 //

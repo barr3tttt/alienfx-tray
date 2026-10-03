@@ -18,8 +18,16 @@ Wayland.
   right-click gives schemes and an on/off toggle.
 - Independent control of the two lighting domains: the keyboard, and the external lights
   (rear ring, lid logo, interior logo).
-- Real colour pickers with live preview while you drag.
-- Named schemes, saved to disk and switchable from the tray.
+- Real colour pickers with live preview while you drag. A preview is a draft, never a
+  write: the selected scheme changes only when you press Save (overwrite it) or "Save
+  current as..." (store the draft under a new name). While the draft differs from the
+  saved scheme an unsaved-changes strip shows under the tabs, and switching scheme or
+  closing the panel throws the draft away.
+- Named schemes, saved to disk and switchable from the tray. Selecting a scheme sets every
+  zone - both rear-ring segments, interior logo, lid logo and keyboard - every time, even
+  when the scheme was already active, so the gesture always repairs the lights.
+- The last selected scheme is what comes up at login and after a restart. Deleting the
+  selected scheme returns the lights to the default, Dracula purple.
 - Applied at login and after resume, through the mechanisms already on the machine.
 - A device that is missing or busy is reported in the UI. Nothing blocks on USB.
 

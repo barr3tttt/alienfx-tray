@@ -30,6 +30,12 @@ reason to reboot into Windows.
 - **Zone** - one addressable light on the external controller, identified by its light ID.
   The rear ring hairline LED is two independent zones (IDs 0 and 1).
 - **Scheme** - a named set of colours and brightnesses covering both domains.
+- **Draft** - what the lights currently show, held in `LightingController::working_`. Edits
+  preview the draft and nothing else: a saved scheme changes only through
+  `saveWorkingScheme()` / `saveWorkingSchemeAs()`. Switching scheme or closing the panel
+  reverts the draft. Scheme selection is always a full repaint (`ApplyDepth::Full`) - every
+  zone, every time - while preview frames use the delta path (`ApplyDepth::Changed`) that
+  exists for drag latency.
 
 ## Runtime conventions
 - Build: `cmake -S . -B build -G Ninja && cmake --build build`
@@ -66,19 +72,29 @@ interface has no `uint8_t` overload. `tests/test_effect_guard.cpp` walks all 256
 values through the conversion. Do not add an `Off` enumerator; "off" is a black colour.
 
 ### External lights are power-type lights
-They need `SetPowerAction`, not `SetColor`. A plain colour set across all 23 mapped IDs
-does nothing at all. Each light carries two colours, AC and battery, which is where the
+They need the power path, not `SetColor`. A plain colour set across all 23 mapped IDs does
+nothing at all. Each light carries two colours, AC and battery, which is where the
 "different colour on battery" feature comes from - it is the hardware's own behaviour.
+
+### The power blocks are shared staging - write all zones in one transaction
+The AW-ELC's six power blocks (`0x5b..0x60`) are global slots, not per-light memory. The
+SDK's `SetPowerAction(light)` re-stages all six for one light, so calling it once per zone
+applies only the LAST zone written; the rest keep whatever they already showed (after a
+reboot: ring light blue, interior logo dark). Every external write therefore goes through
+`SdkExternalDevice::applyZones`, which stages every zone into each block in one
+transaction. A one-zone batch is byte-identical to the old single call, so the delta path
+is unaffected. Never reintroduce a per-light write loop.
 
 ### Colour channel order
 `Afx_colorcode`'s positional constructor is `(b, g, r)`, not `(r, g, b)`. That is the whole
 explanation for "I sent 255 0 0 and got blue". Always assign the named fields.
 
 ### Measured latencies
-Measured 2026-09-27 with `ALIENFX_TRAY_TIMING=1` across three cold `--apply` runs:
-- keyboard open ~110-130 ms, brightness ~20 ms, colour ~20 ms
-- external open ~45 ms, brightness ~3 ms, commit ~15 ms
-- every external zone write: ~110-140 ms, including the first after an open
+Measured with `ALIENFX_TRAY_TIMING=1` on cold `--apply` runs (see docs/hardware-notes.md):
+- keyboard open ~110-135 ms, brightness ~20 ms, colour ~20 ms
+- external open ~45-52 ms, brightness ~2-3 ms, commit ~12-15 ms
+- external zone transaction: ~110-140 ms for one zone (the drag path), ~260 ms for all
+  four zones in a single batched transaction (the scheme path)
 
 An earlier table recorded ~175 ms per zone write and a ~1600 ms first write after every
 open; neither reproduces now. Those numbers drove two design decisions, which stand: the
@@ -94,9 +110,12 @@ A reboot restores firmware defaults, which is what makes this hardware safe to e
 with. This application never issues the SDK's save-to-device commands at all - login and
 resume repaint anyway, so persistence would buy nothing and cost the safety net.
 
-Older config files are migrated to the current zone layout once on load, keeping the
-original as `config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in
-`src/core/config.cpp`.
+Older config files are migrated to the current schema once on load, keeping the original as
+`config.json.bak`; see `docs/hardware-notes.md` and `migrateConfig` in `src/core/config.cpp`.
+Schema v4 also restores the shipped contents of built-in-named schemes: the pre-v4 editing
+model wrote every manual edit into the selected scheme, so any built-in whose colours differ
+from what it shipped as is damage from that write-through, and there was no explicit
+overwrite-save that could have made the change deliberate.
 
 ## Lessons (append-only)
 - 2026-09-13: hidapi's libusb backend never re-attaches the kernel driver. Its

@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core DBus Network Test)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Network Test Widgets)
 
 qt_standard_project_setup()
 
@@ -18,6 +18,25 @@ alienfx_add_test(test_effect_guard alienfx_core)
 
 alienfx_add_test(test_lighting_engine alienfx_core)
 alienfx_add_test(test_config alienfx_core)
+
+# The editing model the captain asked for: manual edits preview live but never overwrite a
+# saved scheme without an explicit Save, and selecting a scheme sets every zone every time.
+# Drives a real LightingController against recording fakes, so the config file on disk and
+# the wire commands are both asserted.
+alienfx_add_test(test_editing_model alienfx_app)
+
+# The panel half of the same model: the widgets are real, driven offscreen, and the unsaved
+# strip, Save, Revert, close-to-revert and scheme-list activation are all exercised.
+alienfx_add_test(test_control_panel alienfx_ui Qt6::Widgets)
+
+# The hardware check for the editing model: drives a real LightingController through every
+# scheme against the real controllers and lists every zone's commanded colour. Not a ctest
+# test - it needs the laptop. tests/e2e/scheme-apply-all-zones.sh runs it.
+qt_add_executable(scheme_apply_driver e2e/scheme_apply_driver.cpp)
+target_link_libraries(scheme_apply_driver PRIVATE alienfx_app)
+target_include_directories(scheme_apply_driver PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR})
 alienfx_add_test(test_startup_integration alienfx_app)
 alienfx_add_test(test_cli_options alienfx_app)
 

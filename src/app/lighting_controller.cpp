@@ -34,11 +34,6 @@ LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs
             setConfigError(QString::fromStdString(error));
     }
 
-    saveTimer_ = new QTimer(this);
-    saveTimer_->setSingleShot(true);
-    saveTimer_->setInterval(kConfigSaveDebounceMs);
-    connect(saveTimer_, &QTimer::timeout, this, &LightingController::saveConfigNow);
-
     watchdog_ = new QTimer(this);
     watchdog_->setSingleShot(true);
     watchdog_->setInterval(applyWatchdogMs);
@@ -53,7 +48,7 @@ LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs
             &LightingController::onApplyDeferred);
 
     // Paint what the config says as soon as we are up.
-    submitCurrent();
+    submitCurrent(ApplyDepth::Full);
 }
 
 LightingController::~LightingController() { shutdown(); }
@@ -62,10 +57,10 @@ DomainStatus LightingController::status(Domain domain) const {
     return domain == Domain::Keyboard ? keyboardStatus_ : externalStatus_;
 }
 
-void LightingController::submitCurrent() {
+void LightingController::submitCurrent(ApplyDepth depth) {
     if (!deviceThread_) return;
     pendingGeneration_ =
-        deviceThread_->submit(resolveOutput(LightingState{working_, config_.lightsOn}));
+        deviceThread_->submit(resolveOutput(LightingState{working_, config_.lightsOn}), depth);
     armWatchdog();
 }
 
@@ -75,35 +70,24 @@ void LightingController::armWatchdog() {
     watchdog_->start(applyWatchdogMs_ + stretch);
 }
 
-void LightingController::applyWorkingScheme(const Scheme& scheme) {
+void LightingController::previewScheme(const Scheme& scheme) {
     working_ = scheme;
-    config_.upsertScheme(working_);
     // Keeping the user's last explicit activation intact: the active scheme only moves when
     // they deliberately pick it from the tray menu, double-click it in the scheme list, or
-    // click "Activate".  Live-previewing an edit must not silently change which scheme the
-    // tray checkmark and login hook consider active.
-    submitCurrent();
-    if (saveTimer_) saveTimer_->start();
+    // click "Activate". Live-previewing an edit must not silently change which scheme the
+    // tray checkmark and login hook consider active - and it must not change what that
+    // scheme contains either. That write-through is what overwrote the shipped presets.
+    submitCurrent(ApplyDepth::Changed);
+    updateUnsavedChanges();
 }
 
-void LightingController::activateScheme(const QString& name) {
-    const std::string key = name.toStdString();
-    const Scheme* scheme = config_.findScheme(key);
-    if (!scheme) return;
-
-    config_.activeSchemeName = key;
-    working_ = *scheme;
-    submitCurrent();
+void LightingController::saveWorkingScheme() {
+    // The draft belongs under the selected scheme's name: "Save" means "make the scheme I
+    // have selected look like this", never "store this under wherever the draft came from".
+    working_.name = config_.activeSchemeName;
+    config_.upsertScheme(working_);
     saveConfigNow();
-    emit schemeChanged();
-}
-
-void LightingController::setLightsOn(bool on) {
-    if (config_.lightsOn == on) return;
-    config_.lightsOn = on;
-    submitCurrent();
-    saveConfigNow();
-    emit lightsOnChanged(on);
+    updateUnsavedChanges();
 }
 
 void LightingController::saveWorkingSchemeAs(const QString& name) {
@@ -118,20 +102,65 @@ void LightingController::saveWorkingSchemeAs(const QString& name) {
     saveConfigNow();
     emit schemeListChanged();
     emit schemeChanged();
+    updateUnsavedChanges();
+}
+
+void LightingController::revertWorkingScheme() {
+    if (!hasUnsavedChanges()) return;
+    working_ = config_.activeScheme();
+    // Full, not Changed: reverting is the same kind of gesture as selecting - the lights
+    // must end up showing the saved scheme, whatever the preview left them showing.
+    submitCurrent(ApplyDepth::Full);
+    emit schemeChanged();
+    updateUnsavedChanges();
+}
+
+void LightingController::activateScheme(const QString& name) {
+    const std::string key = name.toStdString();
+    const Scheme* scheme = config_.findScheme(key);
+    if (!scheme) return;
+
+    config_.activeSchemeName = key;
+    working_ = *scheme;
+    // Selecting a scheme sets every zone, every time. A delta apply would skip whatever the
+    // tracker believes is already painted, and any drift between the tracker and the
+    // physical lights - another process, a firmware quirk, a probe - would stay on the
+    // lights forever with no gesture able to repair it.
+    submitCurrent(ApplyDepth::Full);
+    saveConfigNow();
+    emit schemeChanged();
+    updateUnsavedChanges();
+}
+
+void LightingController::setLightsOn(bool on) {
+    if (config_.lightsOn == on) return;
+    config_.lightsOn = on;
+    submitCurrent(ApplyDepth::Full);
+    saveConfigNow();
+    emit lightsOnChanged(on);
 }
 
 void LightingController::deleteScheme(const QString& name) {
     if (config_.schemes.size() <= 1) return;  // never leave the user with nothing to pick
-    if (!config_.removeScheme(name.toStdString())) return;
+    const std::string key = name.toStdString();
+    const bool selectionMoves = config_.activeSchemeName == key;
+    if (!config_.removeScheme(key)) return;
 
-    working_ = config_.activeScheme();
-    submitCurrent();
+    // Only the selected scheme's delete touches the lights: the selection moves to the
+    // default scheme and the draft goes with it, repainted in full. Deleting an unselected
+    // scheme changes the list and nothing else - an unsaved draft survives it, preview on
+    // the lights included.
+    if (selectionMoves) {
+        working_ = config_.activeScheme();
+        submitCurrent(ApplyDepth::Full);
+        emit schemeChanged();
+    }
     saveConfigNow();
     emit schemeListChanged();
-    emit schemeChanged();
+    updateUnsavedChanges();
 }
 
-void LightingController::reapply() { submitCurrent(); }
+void LightingController::reapply() { submitCurrent(ApplyDepth::Changed); }
 
 void LightingController::setResumeWatched(bool watched) {
     if (deviceThread_) deviceThread_->setExternalStateSurvivesIdleRelease(watched);
@@ -141,11 +170,14 @@ void LightingController::onSystemResumed() {
     if (deviceThread_) deviceThread_->markResumed();
     resumeWait_ = QDeadlineTimer(
         std::chrono::duration_cast<std::chrono::milliseconds>(kDeviceWaitTimeout));
-    submitCurrent();
+    submitCurrent(ApplyDepth::Full);
 }
 
-void LightingController::flushPendingSave() {
-    if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
+void LightingController::updateUnsavedChanges() {
+    const bool unsaved = hasUnsavedChanges();
+    if (unsaved == unsavedChanges_) return;
+    unsavedChanges_ = unsaved;
+    emit unsavedChangesChanged(unsaved);
 }
 
 void LightingController::onWorkerStatus(Domain domain, DomainStatus status) {
@@ -224,7 +256,6 @@ void LightingController::onApplyWatchdog() {
 }
 
 void LightingController::saveConfigNow() {
-    if (saveTimer_) saveTimer_->stop();
     std::string error;
     // A successful write also retires an unreadable-config complaint: the file on disk is
     // now ours and parseable, so the warning would be describing a state that is over.
@@ -241,8 +272,6 @@ void LightingController::setConfigError(QString error) {
 void LightingController::shutdown() {
     if (shutdownDone_) return;
     shutdownDone_ = true;
-
-    if (saveTimer_ && saveTimer_->isActive()) saveConfigNow();
 
     // The SDK's APIv4 ready-wait can spin without a timeout of its own, and quitting must
     // not depend on a wedged controller changing its mind. DeviceThread::stop bounds the

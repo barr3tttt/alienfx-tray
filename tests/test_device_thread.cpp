@@ -43,7 +43,7 @@ class WedgingExternalDevice final : public IExternalDevice {
 
     bool setBrightness(Brightness, const std::vector<std::uint8_t>&) override { return true; }
 
-    bool applyZone(std::uint8_t, Rgb, Rgb) override {
+    bool applyZones(const std::vector<ExternalZoneWrite>&) override {
         state_->entered.store(true);
         while (!state_->released.load()) QThread::msleep(5);
         state_->returned.store(true);

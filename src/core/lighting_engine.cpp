@@ -107,7 +107,6 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     // apply is known that is exactly its lights. When it is not - a fresh engine, a failed
     // command, another process painting while it was released - the controller can be showing anything an earlier session
     // painted, so every light known to be visible on this chassis is assumed lit.
-    // A black pair, not a removal: there is no off command for these lights, only colours.
     const std::vector<std::uint8_t> wanted = collectHardwareIds(settings);
     const std::vector<std::uint8_t> possiblyLit =
         applied ? collectHardwareIds(*applied)
@@ -116,26 +115,31 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
     std::vector<std::uint8_t> stale;
     std::ranges::set_difference(possiblyLit, wanted, std::back_inserter(stale));
 
-    for (std::uint8_t hwId : stale) {
-        if (!external_->applyZone(hwId, Rgb{}, Rgb{})) {
-            appliedExternal_.reset();
-            return external_->status();
-        }
-    }
-    bool sentAnything = !stale.empty();
+    // One write set, one transaction. A stale light goes off as a black pair - there is no
+    // off command for these lights, only colours - and it has to ride in the SAME batch as
+    // the scheme's own colours: the power blocks are shared staging slots that each
+    // transaction re-stages from scratch, so offs staged on their own would be overwritten
+    // by the colour staging before the commit, and the lights would stay lit.
+    std::vector<ExternalZoneWrite> writes;
+    writes.reserve(stale.size() + settings.zones.size());
+    for (std::uint8_t hwId : stale)
+        writes.push_back(ExternalZoneWrite{hwId, Rgb{}, Rgb{}});
 
     if (settings.zones.empty()) {
-        if (sentAnything && !external_->commit()) {
-            appliedExternal_.reset();
-            return external_->status();
+        if (!writes.empty()) {
+            if (!external_->applyZones(writes) || !external_->commit()) {
+                appliedExternal_.reset();
+                return external_->status();
+            }
         }
         appliedExternal_ = settings;
         return DomainStatus{DeviceState::Ready,
-                            sentAnything ? "external zones turned off" : "no zones configured"};
+                            writes.empty() ? "no zones configured" : "external zones turned off"};
     }
 
     // On APIv4 the brightness command is also what turns the listed lights on, so it has to
-    // be resent whenever the set of lights changes, not only when the level does.
+    // be resent whenever the set of lights changes, not only when the level does. It runs
+    // before the transaction so the lights are powered when the staged colours play.
     if (!applied || applied->brightness != settings.brightness ||
         !sameLightIds(*applied, settings)) {
         if (!external_->setBrightness(settings.brightness, wanted)) {
@@ -148,18 +152,16 @@ DomainStatus LightingEngine::applyExternal(const ExternalSettings& settings) {
         const ExternalZone* previous = applied ? findZone(*applied, zone.lightId) : nullptr;
         if (previous && previous->color == zone.color) continue;
 
-        for (std::uint8_t hwId : zoneHardwareIds(zone)) {
-            if (!external_->applyZone(hwId, zone.color.ac, zone.color.effectiveBattery())) {
-                appliedExternal_.reset();
-                return external_->status();
-            }
-        }
-        sentAnything = true;
+        for (std::uint8_t hwId : zoneHardwareIds(zone))
+            writes.push_back(
+                ExternalZoneWrite{hwId, zone.color.ac, zone.color.effectiveBattery()});
     }
 
-    if (sentAnything && !external_->commit()) {
-        appliedExternal_.reset();
-        return external_->status();
+    if (!writes.empty()) {
+        if (!external_->applyZones(writes) || !external_->commit()) {
+            appliedExternal_.reset();
+            return external_->status();
+        }
     }
 
     appliedExternal_ = settings;

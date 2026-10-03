@@ -20,7 +20,6 @@ require_display "single instance" || { summary "single-instance"; exit $?; }
 
 BIN="$(tray_bin)"
 WORK="$(mktemp -d)"
-trap 'pkill -TERM -f "$BIN" >/dev/null 2>&1; rm -rf "$WORK"' EXIT
 
 export XDG_CONFIG_HOME="$WORK/config"
 mkdir -p "$XDG_CONFIG_HOME"
@@ -34,9 +33,16 @@ count_instances() { pgrep -f "^$BIN\$" 2>/dev/null | wc -l | tr -d ' '; }
 # from ~/.local/bin would make the launched "first instance" exit on contact.
 if pgrep -x alienfx-tray >/dev/null 2>&1; then
   skip "single instance (an alienfx-tray is already running)"
+  rm -rf "$WORK"
   summary "single-instance"
   exit $?
 fi
+
+# Set only after the skip check: the cleanup must kill the instance this script started,
+# never a tray that was already running - the skip path used to terminate exactly the
+# instance it had just detected, on its way out.
+first_pid=""
+trap '[[ -n "$first_pid" ]] && kill -TERM "$first_pid" >/dev/null 2>&1; rm -rf "$WORK"' EXIT
 
 note "starting the first instance"
 "$BIN" >"$WORK/first.log" 2>&1 &

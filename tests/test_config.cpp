@@ -198,7 +198,7 @@ class TestConfig : public QObject {
         const LoadResult result = loadConfig(path);
         QVERIFY(result.error.empty());
         QVERIFY(result.config.lightsOn);
-        QCOMPARE(result.config.activeSchemeName, std::string("x"));
+        QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
 
         const Scheme* scheme = result.config.findScheme("x");
         QVERIFY(scheme != nullptr);
@@ -430,6 +430,33 @@ class TestConfig : public QObject {
         QVERIFY(config.findScheme(config.activeSchemeName) != nullptr);
     }
 
+    // The standing rule for Delete: the selection returns to the default scheme - Dracula -
+    // rather than to whatever happens to sort first in the file.
+    void removingTheActiveSchemeFallsBackToTheDefault() {
+        Config config = Config::defaults();
+        // Put a user scheme ahead of the default so "first" and "default" are different
+        // schemes and the assertion can tell them apart.
+        Scheme mine = defaultScheme();
+        mine.name = "Mine";
+        config.schemes.insert(config.schemes.begin(), mine);
+        config.activeSchemeName = "Mine";
+
+        QVERIFY(config.removeScheme("Mine"));
+        QCOMPARE(config.activeSchemeName, std::string(kDefaultSchemeName));
+    }
+
+    // The one exception: when the default itself is the scheme being deleted, it cannot be
+    // the fallback, and the first remaining scheme takes over.
+    void removingTheActiveDefaultItselfFallsBackToTheFirstRemaining() {
+        Config config = Config::defaults();
+        config.activeSchemeName = std::string(kDefaultSchemeName);
+
+        QVERIFY(config.removeScheme(std::string(kDefaultSchemeName)));
+        QVERIFY(!config.activeSchemeName.empty());
+        QCOMPARE(config.activeSchemeName, config.schemes.front().name);
+        QVERIFY(config.findScheme(config.activeSchemeName) != nullptr);
+    }
+
     void colourHexRoundTrips() {
         Rgb parsed;
         QVERIFY(parseHex("#bd93f9", parsed));
@@ -460,8 +487,9 @@ class TestConfig : public QObject {
                  config.findScheme("Solid red")->keyboard.brightness);
     }
 
-    // An active name that matches no scheme falls back to the first scheme and is recorded as
-    // active, so the tray checkmark and the scheme list agree with what is painted.
+    // An active name that matches no scheme falls back to the default scheme and is
+    // recorded as active, so the tray checkmark and the scheme list agree with what is
+    // painted.
     void aStaleActiveSchemeNameIsRepairedOnLoad() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -474,8 +502,63 @@ class TestConfig : public QObject {
 
         const LoadResult result = loadConfig(path);
         QVERIFY(result.error.empty());
-        QCOMPARE(result.config.activeSchemeName, config.schemes.front().name);
+        QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
         QCOMPARE(result.config.activeScheme().name, result.config.activeSchemeName);
+    }
+
+    // A file that lacks the default without having deleted it gets the default re-seeded on
+    // load, and a missing or stale selection lands on it rather than on the first scheme.
+    void aStaleSelectionLandsOnTheReseededDefault() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        for (const char* active : {"Gone", ""}) {
+            Config config;
+            Scheme mine = defaultScheme();
+            mine.name = "Mine";
+            config.schemes.push_back(mine);
+            config.activeSchemeName = active;
+            std::string error;
+            QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+            const LoadResult result = loadConfig(path);
+            QVERIFY(result.error.empty());
+            QVERIFY(result.config.findScheme(std::string(kDefaultSchemeName)) != nullptr);
+            QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
+        }
+    }
+
+    // A deliberately deleted default stays deleted, so a stale selection falls to the first
+    // remaining scheme.
+    void aStaleSelectionWithTheDefaultDeletedLandsOnTheFirstScheme() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        Config config = Config::defaults();
+        QVERIFY(config.removeScheme(std::string(kDefaultSchemeName)));
+        config.activeSchemeName = "Gone";
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.config.findScheme(std::string(kDefaultSchemeName)) == nullptr);
+        QCOMPARE(result.config.activeSchemeName, result.config.schemes.front().name);
+    }
+
+    // The stale-name fallback prefers the default scheme even when it is not the first
+    // scheme in the file.
+    void aStaleActiveSchemeNamePrefersTheDefaultOverTheFirstScheme() {
+        Config config;
+        Scheme mine = defaultScheme();
+        mine.name = "Mine";
+        config.schemes.push_back(mine);
+        config.schemes.push_back(defaultScheme());
+        config.activeSchemeName = "Gone";
+
+        QCOMPARE(config.activeScheme().name, std::string(kDefaultSchemeName));
+        QCOMPARE(config.fallbackSchemeName(), std::string(kDefaultSchemeName));
     }
 
     // --- migration tests ---
@@ -663,10 +746,54 @@ class TestConfig : public QObject {
         QCOMPARE(zones[3].name, std::string("Lid logo"));
     }
 
+    // The pre-v4 editing model wrote every manual edit straight into the selected scheme,
+    // so a v3 config can hold a built-in whose colours no longer match what it shipped as.
+    // There was no explicit overwrite-save then, so every built-in whose contents differ is
+    // damage, and the migration restores the shipped contents. Schemes with any other name
+    // are the user's own and keep exactly what they say.
+    void migrationRestoresBuiltInContentsButNotUserSchemes() {
+        Config config;
+        config.schemaVersion = 3;
+
+        Scheme mangled;
+        mangled.name = "Cool white";
+        mangled.keyboard.color = Rgb{0, 0, 255};
+        mangled.keyboard.brightness = Brightness::fromPercent(100);
+        mangled.external = defaultExternalSettings(Rgb{1, 2, 3});
+
+        Scheme mine;
+        mine.name = "Mine";
+        mine.keyboard.color = Rgb{9, 9, 9};
+        mine.external = defaultExternalSettings(Rgb{9, 9, 9});
+
+        config.schemes.push_back(mangled);
+        config.schemes.push_back(mine);
+        config.activeSchemeName = "Mine";
+
+        QVERIFY(migrateConfig(config));
+
+        const Scheme* restored = config.findScheme("Cool white");
+        QVERIFY(restored != nullptr);
+        Scheme shipped;
+        bool foundShipped = false;
+        for (const Scheme& builtin : builtinSchemes()) {
+            if (builtin.name == "Cool white") {
+                shipped = builtin;
+                foundShipped = true;
+            }
+        }
+        QVERIFY(foundShipped);
+        QCOMPARE(*restored, shipped);
+
+        const Scheme* userScheme = config.findScheme("Mine");
+        QVERIFY(userScheme != nullptr);
+        QCOMPARE(userScheme->keyboard.color, (Rgb{9, 9, 9}));
+        QCOMPARE(userScheme->external.zones.front().color.ac, (Rgb{9, 9, 9}));
+    }
+
     // Deleting a shipped preset is recorded so it stays deleted. Upgrading the layout of an
     // old config is not a reason to bring it back.
-    void aDeletedBuiltInStaysDeletedThroughMigration() {
-        QTemporaryDir dir;
+    void aDeletedBuiltInStaysDeletedThroughMigration() {        QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const std::filesystem::path path =
             std::filesystem::path(dir.path().toStdString()) / "config.json";

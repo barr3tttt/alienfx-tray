@@ -28,9 +28,9 @@ DeviceThread::DeviceThread(DeviceWorker* worker, QObject* parent)
 
 DeviceThread::~DeviceThread() { stop(kStopTimeout); }
 
-quint64 DeviceThread::submit(const ResolvedScheme& scheme) {
+quint64 DeviceThread::submit(const ResolvedScheme& scheme, ApplyDepth depth) {
     if (!worker_) return 0;
-    return worker_->submit(scheme);
+    return worker_->submit(scheme, depth);
 }
 
 void DeviceThread::setExternalStateSurvivesIdleRelease(bool survives) {

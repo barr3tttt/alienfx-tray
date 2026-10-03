@@ -168,8 +168,13 @@ Scheme* Config::findScheme(const std::string& name) {
 
 Scheme Config::activeScheme() const {
     if (const Scheme* scheme = findScheme(activeSchemeName)) return *scheme;
-    if (!schemes.empty()) return schemes.front();
+    if (const Scheme* scheme = findScheme(fallbackSchemeName())) return *scheme;
     return defaultScheme();
+}
+
+std::string Config::fallbackSchemeName() const {
+    if (findScheme(std::string(kDefaultSchemeName))) return std::string(kDefaultSchemeName);
+    return schemes.empty() ? std::string() : schemes.front().name;
 }
 
 LightingState Config::lightingState() const { return LightingState{activeScheme(), lightsOn}; }
@@ -191,7 +196,10 @@ bool Config::removeScheme(const std::string& name) {
     for (auto it = schemes.begin(); it != schemes.end(); ++it) {
         if (it->name != name) continue;
         schemes.erase(it);
-        if (activeSchemeName == name) activeSchemeName = schemes.empty() ? "" : schemes.front().name;
+        // Deleting the selected scheme returns the selection to the default - Dracula -
+        // not to whatever happens to sort first. Only when the default itself is gone does
+        // the first remaining scheme take over.
+        if (activeSchemeName == name) activeSchemeName = fallbackSchemeName();
         // A deliberate delete has to outlive the restart, or the re-seed puts the shipped
         // preset straight back and Delete only appears to work.
         const bool alreadyRecorded =
@@ -213,7 +221,7 @@ void Config::restoreMissingBuiltins() {
 Config Config::defaults() {
     Config config;
     config.schemes = builtinSchemes();
-    config.activeSchemeName = config.schemes.front().name;
+    config.activeSchemeName = std::string(kDefaultSchemeName);
     config.lightsOn = true;
     return config;
 }
@@ -274,6 +282,18 @@ bool migrateConfig(Config& config) {
             if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
         }
 
+    }
+
+    // v3 -> v4: the old editing model wrote every manual edit straight into the selected
+    // scheme, so any built-in whose colours were ever touched no longer matches what it
+    // shipped as. There was no explicit overwrite-save in that model - every change to a
+    // built-in's contents came through the implicit path - so the shipped contents are
+    // restored wholesale. Schemes with other names are the user's own and are left alone,
+    // and the pre-migration file is kept as .bak before the rewrite, as with every bump.
+    if (config.schemaVersion < 4) {
+        for (const Scheme& builtin : builtinSchemes()) {
+            if (Scheme* existing = config.findScheme(builtin.name)) *existing = builtin;
+        }
     }
 
     config.schemaVersion = Config::kSchemaVersion;
@@ -380,9 +400,7 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
             if (entry.is_string()) config.removedBuiltins.push_back(entry.get<std::string>());
     }
 
-    config.activeSchemeName = readString(root, "activeScheme", config.schemes.front().name);
-    if (!config.findScheme(config.activeSchemeName))
-        config.activeSchemeName = config.schemes.front().name;
+    config.activeSchemeName = readString(root, "activeScheme", std::string());
     config.lightsOn = readBool(root, "lightsOn", true);
     out = std::move(config);
     return true;
@@ -425,6 +443,11 @@ LoadResult loadConfig(const std::filesystem::path& path) {
     // Built-ins are re-seeded rather than merged, so editing one in place can never destroy
     // it for good. Deleting one is a different intent and is recorded, so it stays deleted.
     result.config.restoreMissingBuiltins();
+
+    // A missing or stale selection is resolved only once the shipped schemes are back, so it
+    // lands on the default rather than on whatever the file happened to list first.
+    if (!result.config.findScheme(result.config.activeSchemeName))
+        result.config.activeSchemeName = result.config.fallbackSchemeName();
 
     // Rewriting the file stamps the new version, so the next load skips the migration and
     // leaves the backup of the original untouched.

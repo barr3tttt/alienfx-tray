@@ -57,7 +57,7 @@ ExternalSettings defaultExternalSettings(Rgb color) {
 Scheme defaultScheme() {
     constexpr Rgb draculaPurple{189, 147, 249};
     Scheme scheme;
-    scheme.name = "Dracula purple";
+    scheme.name = std::string(kDefaultSchemeName);
     scheme.keyboard.effect = kDefaultKeyboardEffect;
     scheme.keyboard.color = draculaPurple;
     scheme.external = defaultExternalSettings(draculaPurple);

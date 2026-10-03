@@ -17,7 +17,7 @@ namespace alienfx {
 // persistence in firmware buys nothing and costs the property that makes this hardware safe
 // to experiment with at all - that a reboot always restores the factory default.
 struct Config {
-    static constexpr int kSchemaVersion = 3;
+    static constexpr int kSchemaVersion = 4;
 
     // The version the data was written in. Anything below kSchemaVersion still needs
     // migrateConfig before it matches the current zone layout.
@@ -38,22 +38,27 @@ struct Config {
     [[nodiscard]] Scheme activeScheme() const;
     [[nodiscard]] LightingState lightingState() const;
 
+    // Where the selection lands when the named scheme is not there: the default scheme
+    // (kDefaultSchemeName) when it is present, the first scheme when the user deliberately
+    // deleted the default, or empty when there are no schemes at all.
+    [[nodiscard]] std::string fallbackSchemeName() const;
+
     // Adds or replaces by name. Returns true if an existing scheme was replaced.
     bool upsertScheme(const Scheme& scheme);
     bool removeScheme(const std::string& name);
 
     // Adds back any built-in scheme whose name is neither present nor deliberately removed,
-    // leaving everything else alone. Editing a scheme in place rewrites it, so without this
-    // a drag of the colour wheel would destroy a shipped preset with no way back short of
-    // deleting the config file. Never overwrites: a user scheme that shares a built-in name
-    // wins, and a name in removedBuiltins is not re-seeded at all.
+    // leaving everything else alone, so a shipped preset that goes missing from the file
+    // comes back without deleting the config. Never overwrites: a user scheme that shares a
+    // built-in name wins, and a name in removedBuiltins is not re-seeded at all.
     void restoreMissingBuiltins();
 
     [[nodiscard]] static Config defaults();
 };
 
-// Migrates a config written by an older schema to the current zone layout and stamps it with
-// the current version, so it runs once per file. Returns true if the config was upgraded.
+// Migrates a config written by an older schema to the current zone layout (and, from before
+// v4, restores built-in-named schemes to their shipped contents) and stamps it with the
+// current version, so it runs once per file. Returns true if the config was upgraded.
 [[nodiscard]] bool migrateConfig(Config& config);
 
 // Writes contents to source with ".bak" appended. Returns true if the write succeeded.

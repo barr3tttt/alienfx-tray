@@ -5,8 +5,10 @@
 
 // AlienFX_SDK.h does `using namespace std;` at file scope. It is included here and in no
 // other translation unit in this project, which is the reason the IKeyboardDevice /
-// IExternalDevice interfaces exist at all.
+// IExternalDevice interfaces exist at all. alienfx_control.h carries the APIv4 command
+// templates the hand-rolled power transaction below is built from.
 #include "AlienFX_SDK.h"
+#include "alienfx_control.h"
 #include "device/phase_timer.h"
 
 namespace alienfx {
@@ -33,11 +35,6 @@ AlienFX_SDK::Afx_colorcode toSdkColor(Rgb color) {
     out.b = color.b;
     out.br = 0;
     return out;
-}
-
-AlienFX_SDK::Afx_action powerAction(Rgb color) {
-    return AlienFX_SDK::Afx_action{AlienFX_SDK::AlienFX_A_Power, kPowerActionTime,
-                                   kPowerActionTempo, color.r, color.g, color.b};
 }
 
 }  // namespace
@@ -203,29 +200,150 @@ bool SdkExternalDevice::setBrightness(Brightness brightness,
     return true;
 }
 
-bool SdkExternalDevice::applyZone(std::uint8_t lightId, Rgb acColor, Rgb batteryColor) {
-    PhaseTimer timer("external/applyZone");
+namespace {
+
+using AlienFX_SDK::Afx_action;
+using AlienFX_SDK::Afx_icommand;
+
+// One report on the wire, or false. PrepareAndSend takes the mod list by pointer and
+// empties it; the by-value parameter hands it a copy it can drain.
+bool sendReport(AlienFX_SDK::Functions* fx, const std::uint8_t* command,
+                std::vector<Afx_icommand> mods) {
+    return fx->PrepareAndSend(command, &mods);
+}
+
+// The action list one power block carries for one light, mirroring the construction the
+// SDK's SetPowerAction uses, byte for byte. Each of the six control IDs is a power state;
+// the state decides whether the AC colour, the battery colour, or black fills each slot.
+// front/back are the caller's AC/battery actions.
+std::vector<Afx_action> powerBlockActions(std::uint8_t controlId,
+                                          const ExternalZoneWrite& zone) {
+    const Afx_action front{AlienFX_SDK::AlienFX_A_Power, kPowerActionTime, kPowerActionTempo,
+                           zone.acColor.r, zone.acColor.g, zone.acColor.b};
+    const Afx_action back{AlienFX_SDK::AlienFX_A_Power, kPowerActionTime, kPowerActionTempo,
+                          zone.batteryColor.r, zone.batteryColor.g, zone.batteryColor.b};
+    const Afx_action black{AlienFX_SDK::AlienFX_A_Power, kPowerActionTime, kPowerActionTempo,
+                           0, 0, 0};
+    Afx_action frontAsColor = front;
+    frontAsColor.type = AlienFX_SDK::AlienFX_A_Color;
+    Afx_action frontAsPulse = front;
+    frontAsPulse.type = AlienFX_SDK::AlienFX_A_Pulse;
+
+    switch (controlId) {
+        case 0x5b:  // AC sleep
+            return {front, back, front, black};
+        case 0x5c:  // AC power
+            return {frontAsColor, back, front};
+        case 0x5d:  // charge
+            return {front, back, front, back};
+        case 0x5e:  // battery sleep
+            return {front, back, back, black};
+        case 0x5f:  // battery power
+            return {frontAsColor, back, back};
+        case 0x60:  // battery critical
+            return {frontAsPulse, back, back};
+        default:
+            return {};
+    }
+}
+
+// One action's 8-byte entry in a colour-set report - the packing the SDK's SetV4Action
+// produces, v4OpCodes and all. Reports carry at most three entries, at offsets 3, 11, 19.
+Afx_icommand packAction(const Afx_action& action, int offset) {
+    const std::uint8_t type = action.type < AlienFX_SDK::AlienFX_A_Breathing
+                                  ? action.type
+                                  : static_cast<std::uint8_t>(AlienFX_SDK::AlienFX_A_Morph);
+    return {offset,
+            {type, action.time, AlienFX_SDK::v4OpCodes[action.type], 0,
+             static_cast<std::uint8_t>(action.type == AlienFX_SDK::AlienFX_A_Color
+                                           ? 0xfa
+                                           : action.tempo),
+             action.r, action.g, action.b}};
+}
+
+}  // namespace
+
+bool SdkExternalDevice::applyZones(const std::vector<ExternalZoneWrite>& zones) {
+    // The light count rides in the label: the timing breakdown is the wire-level evidence
+    // that a scheme apply staged every zone in one transaction, and a bare label cannot
+    // show that.
+    const std::string timerLabel =
+        "external/applyZones (" + std::to_string(zones.size()) + " lights)";
+    PhaseTimer timer(timerLabel.c_str());
     AlienFX_SDK::Functions* fx = device();
     if (!fx) {
         markError("device not open");
         return false;
     }
+    if (zones.empty()) {
+        markReady();
+        return true;
+    }
 
     if (!waitUntilReady()) {
-        // Refusing here is the point: SetPowerAction's WaitForReady() has no timeout.
         status_ = DomainStatus{DeviceState::Busy, "controller did not become ready"};
         return false;
     }
 
-    // These are power-type lights carrying two colours, AC and battery. A plain colour set
-    // across all 23 mapped IDs does nothing whatsoever on this controller - it has to be
-    // the power path.
-    AlienFX_SDK::Afx_lightblock block{};
-    block.index = lightId;
-    block.act = {powerAction(acColor), powerAction(batteryColor)};
+    // The power transaction, hand-rolled over PrepareAndSend rather than built from the
+    // SDK's SetPowerAction. SetPowerAction stages ONE light into the six power blocks
+    // (control IDs 0x5b..0x60), and the blocks are shared slots: calling it once per
+    // light re-stages every block for the new light, so the play that follows applies
+    // only the last light written and the rest keep whatever they already showed. Every
+    // zone is therefore staged into each block before the play. The per-block shape -
+    // remove, start, colour-select plus colour-set per zone, finish-and-save - is the
+    // one the SDK produces for a single light, so a one-zone batch is byte-identical to
+    // the call it replaces.
+    for (std::uint8_t cid = 0x5b; cid < 0x61; ++cid) {
+        if (!sendReport(fx, AlienFX_SDK::COMMV4_setPower, {{4, {4, 0, cid}}}) ||
+            !sendReport(fx, AlienFX_SDK::COMMV4_setPower, {{4, {1, 0, cid}}})) {
+            markError("power-block open refused");
+            return false;
+        }
 
-    if (!fx->SetPowerAction(&block)) {
-        markError("power-light command refused for light " + std::to_string(lightId));
+        for (const ExternalZoneWrite& zone : zones) {
+            if (!sendReport(fx, AlienFX_SDK::COMMV4_colorSel, {{6, {zone.lightId}}})) {
+                markError("light-select refused for light " + std::to_string(zone.lightId));
+                return false;
+            }
+            const std::vector<Afx_action> actions = powerBlockActions(cid, zone);
+            for (std::size_t first = 0; first < actions.size(); first += 3) {
+                std::vector<Afx_icommand> mods;
+                for (std::size_t slot = 0; slot < 3 && first + slot < actions.size();
+                     ++slot)
+                    mods.push_back(
+                        packAction(actions[first + slot], 3 + static_cast<int>(slot) * 8));
+                if (!sendReport(fx, AlienFX_SDK::COMMV4_colorSet, std::move(mods))) {
+                    markError("colour-set refused for light " +
+                              std::to_string(zone.lightId));
+                    return false;
+                }
+            }
+        }
+
+        if (!sendReport(fx, AlienFX_SDK::COMMV4_setPower, {{4, {2, 0, cid}}})) {
+            markError("power-block finish refused");
+            return false;
+        }
+    }
+
+    if (!sendReport(fx, AlienFX_SDK::COMMV4_control, {{4, {5}}})) {  // play what was staged
+        markError("play command refused");
+        return false;
+    }
+
+    // The play is acknowledged before it is processed: the controller latches busy while
+    // it applies the blocks. Watch for the latch for a short bounded window - the same
+    // 10 ms the SDK's WaitForBusy allows - so the ready-wait cannot slip past before the
+    // busy starts, then wait for it to settle.
+    const auto busyDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+    while (std::chrono::steady_clock::now() < busyDeadline) {
+        if (!fx->IsDeviceReady()) break;
+        std::this_thread::sleep_for(std::chrono::microseconds(20));
+    }
+
+    if (!waitUntilReady()) {
+        status_ = DomainStatus{DeviceState::Busy, "controller did not become ready"};
         return false;
     }
     markReady();
@@ -243,14 +361,18 @@ bool SdkExternalDevice::commit() {
         status_ = DomainStatus{DeviceState::Busy, "controller did not become ready"};
         return false;
     }
-    // SetPowerAction leaves the SDK's inSet flag false, and UpdateColors() silently does
-    // nothing without it. Reset() opens the transaction so UpdateColors() actually sends
-    // the APIv4 finish-and-play.
-    if (!fx->Reset()) {
+    // The finish-and-play that makes the staged power blocks the running program.
+    // Hand-rolled rather than Reset() + UpdateColors() because Reset() reaches the SDK's
+    // unbounded WaitForReady() on this API version; the three reports are exactly the ones
+    // those calls send - remove the running program, start a new one from the staged
+    // blocks, finish and play it - with only the bounded wait above on the path.
+    if (!sendReport(fx, AlienFX_SDK::COMMV4_control, {{4, {4}}}) ||
+        !sendReport(fx, AlienFX_SDK::COMMV4_control, {{4, {1}}})) {
         markError("transaction open refused");
         return false;
     }
-    if (!fx->UpdateColors()) {
+    // No mod list: the bare control template is the finish-and-play (type 3, common ID).
+    if (!fx->PrepareAndSend(AlienFX_SDK::COMMV4_control)) {
         markError("update refused");
         return false;
     }

@@ -68,7 +68,12 @@ class DeviceWorker : public QObject {
 
     // Callable from any thread. Replaces whatever was pending and returns the generation
     // the caller can expect back from applyFinished, so a superseded apply is recognisable.
-    quint64 submit(const ResolvedScheme& scheme);
+    //
+    // The depth is not latest-wins like the scheme is: once any frame in a burst asks for a
+    // Full apply the burst gets one, because a Full request exists to repair a hardware
+    // state the tracker cannot see, and dropping it behind a newer Changed frame would lose
+    // exactly the repaint that was asked for.
+    quint64 submit(const ResolvedScheme& scheme, ApplyDepth depth = ApplyDepth::Changed);
 
     // Callable from any thread. Whether what the external lights were last sent may be
     // trusted across the idle release. Releasing the handle changes nothing they show, but
@@ -114,7 +119,7 @@ class DeviceWorker : public QObject {
 
    private:
     void publishStatus(Domain domain, const DomainStatus& status);
-    void deferUntilLockFrees(ResolvedScheme scheme, quint64 generation);
+    void deferUntilLockFrees(ResolvedScheme scheme, quint64 generation, bool fullRepaint);
     void releaseIdle(Domain domain);
     ApplyResult repaintAfterResume(const ResolvedScheme& scheme);
     // The lock is only meaningful while a handle is open, so it goes back with the last one.
@@ -130,6 +135,9 @@ class DeviceWorker : public QObject {
 
     QMutex mutex_;
     std::optional<ResolvedScheme> pending_;
+    // Sticky across the burst: set by any Full submission, cleared when an apply actually
+    // runs. See submit().
+    bool pendingFull_ = false;
     quint64 generation_ = 0;
     std::atomic<bool> scheduled_{false};
     std::atomic<bool> externalStateSurvivesIdleRelease_{false};
