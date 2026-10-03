@@ -400,9 +400,7 @@ bool deserializeConfig(const std::string& text, Config& out, std::string& error)
             if (entry.is_string()) config.removedBuiltins.push_back(entry.get<std::string>());
     }
 
-    config.activeSchemeName = readString(root, "activeScheme", config.fallbackSchemeName());
-    if (!config.findScheme(config.activeSchemeName))
-        config.activeSchemeName = config.fallbackSchemeName();
+    config.activeSchemeName = readString(root, "activeScheme", std::string());
     config.lightsOn = readBool(root, "lightsOn", true);
     out = std::move(config);
     return true;
@@ -445,6 +443,11 @@ LoadResult loadConfig(const std::filesystem::path& path) {
     // Built-ins are re-seeded rather than merged, so editing one in place can never destroy
     // it for good. Deleting one is a different intent and is recorded, so it stays deleted.
     result.config.restoreMissingBuiltins();
+
+    // A missing or stale selection is resolved only once the shipped schemes are back, so it
+    // lands on the default rather than on whatever the file happened to list first.
+    if (!result.config.findScheme(result.config.activeSchemeName))
+        result.config.activeSchemeName = result.config.fallbackSchemeName();
 
     // Rewriting the file stamps the new version, so the next load skips the migration and
     // leaves the backup of the original untouched.

@@ -198,7 +198,7 @@ class TestConfig : public QObject {
         const LoadResult result = loadConfig(path);
         QVERIFY(result.error.empty());
         QVERIFY(result.config.lightsOn);
-        QCOMPARE(result.config.activeSchemeName, std::string("x"));
+        QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
 
         const Scheme* scheme = result.config.findScheme("x");
         QVERIFY(scheme != nullptr);
@@ -504,6 +504,47 @@ class TestConfig : public QObject {
         QVERIFY(result.error.empty());
         QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
         QCOMPARE(result.config.activeScheme().name, result.config.activeSchemeName);
+    }
+
+    // A file that lacks the default without having deleted it gets the default re-seeded on
+    // load, and a missing or stale selection lands on it rather than on the first scheme.
+    void aStaleSelectionLandsOnTheReseededDefault() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        for (const char* active : {"Gone", ""}) {
+            Config config;
+            Scheme mine = defaultScheme();
+            mine.name = "Mine";
+            config.schemes.push_back(mine);
+            config.activeSchemeName = active;
+            std::string error;
+            QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+            const LoadResult result = loadConfig(path);
+            QVERIFY(result.error.empty());
+            QVERIFY(result.config.findScheme(std::string(kDefaultSchemeName)) != nullptr);
+            QCOMPARE(result.config.activeSchemeName, std::string(kDefaultSchemeName));
+        }
+    }
+
+    // A deliberately deleted default stays deleted, so a stale selection falls to the first
+    // remaining scheme.
+    void aStaleSelectionWithTheDefaultDeletedLandsOnTheFirstScheme() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const std::filesystem::path path =
+            std::filesystem::path(dir.path().toStdString()) / "config.json";
+        Config config = Config::defaults();
+        QVERIFY(config.removeScheme(std::string(kDefaultSchemeName)));
+        config.activeSchemeName = "Gone";
+        std::string error;
+        QVERIFY2(saveConfig(config, path, error), error.c_str());
+
+        const LoadResult result = loadConfig(path);
+        QVERIFY(result.config.findScheme(std::string(kDefaultSchemeName)) == nullptr);
+        QCOMPARE(result.config.activeSchemeName, result.config.schemes.front().name);
     }
 
     // The stale-name fallback prefers the default scheme even when it is not the first

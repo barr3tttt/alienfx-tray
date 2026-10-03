@@ -6,6 +6,7 @@
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
@@ -159,8 +160,9 @@ ControlPanel::ControlPanel(LightingController& controller, QWidget* parent)
 
 void ControlPanel::hideEvent(QHideEvent* event) {
     // Closing with unsaved edits discards them, the same as switching scheme does. The
-    // preview was only ever a draft on the lights.
-    if (controller_.hasUnsavedChanges()) controller_.revertWorkingScheme();
+    // preview was only ever a draft on the lights. A spontaneous hide is the window system
+    // minimising or unmapping the panel, not the user closing it, so the draft survives it.
+    if (!event->spontaneous() && controller_.hasUnsavedChanges()) controller_.revertWorkingScheme();
     QWidget::hideEvent(event);
 }
 
