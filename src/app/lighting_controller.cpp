@@ -142,13 +142,21 @@ void LightingController::setLightsOn(bool on) {
 
 void LightingController::deleteScheme(const QString& name) {
     if (config_.schemes.size() <= 1) return;  // never leave the user with nothing to pick
-    if (!config_.removeScheme(name.toStdString())) return;
+    const std::string key = name.toStdString();
+    const bool selectionMoves = config_.activeSchemeName == key;
+    if (!config_.removeScheme(key)) return;
 
-    working_ = config_.activeScheme();
-    submitCurrent(ApplyDepth::Full);
+    // Only the selected scheme's delete touches the lights: the selection moves to the
+    // default scheme and the draft goes with it, repainted in full. Deleting an unselected
+    // scheme changes the list and nothing else - an unsaved draft survives it, preview on
+    // the lights included.
+    if (selectionMoves) {
+        working_ = config_.activeScheme();
+        submitCurrent(ApplyDepth::Full);
+        emit schemeChanged();
+    }
     saveConfigNow();
     emit schemeListChanged();
-    emit schemeChanged();
     updateUnsavedChanges();
 }
 

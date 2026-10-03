@@ -44,6 +44,8 @@ class TestEditingModel : public QObject {
     void switchingSchemeDiscardsUnsavedEdits();
     void revertRestoresTheSelectedScheme();
     void unsavedChangesSignalTracksTheDraft();
+    void deletingAnUnselectedSchemeKeepsTheDraft();
+    void deletingTheActiveSchemeFallsBackToTheDefaultAndRepaints();
 
    private:
     void seedConfig(std::initializer_list<Scheme> schemes, const std::string& active);
@@ -319,6 +321,74 @@ void TestEditingModel::unsavedChangesSignalTracksTheDraft() {
     controller_->revertWorkingScheme();
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.takeFirst().at(0).toBool(), false);
+}
+
+// Deleting a scheme that is not selected must not disturb the draft: the preview stays on
+// the lights, the unsaved state stays set, and nothing is repainted. Only the scheme list
+// changes.
+void TestEditingModel::deletingAnUnselectedSchemeKeepsTheDraft() {
+    seedConfig({test::solidScheme("Alpha", Rgb{0x10, 0, 0}),
+                test::solidScheme("Beta", Rgb{0x20, 0, 0})},
+               "Alpha");
+    makeController();
+    settle();
+
+    Scheme edited = controller_->workingScheme();
+    edited.external.zones.front().color = uniform(kEditedColor);
+    controller_->previewScheme(edited);
+    QTRY_VERIFY_WITH_TIMEOUT(zoneWrites().size() == 1, 5000);
+    QVERIFY(controller_->hasUnsavedChanges());
+
+    record_->clear();
+    controller_->deleteScheme(QStringLiteral("Beta"));
+
+    // Nothing was repainted: the draft on the lights is untouched.
+    QTest::qWait(500);
+    QVERIFY(zoneWrites().empty());
+    QVERIFY(effectWrites().empty());
+    QVERIFY(controller_->hasUnsavedChanges());
+    QCOMPARE(controller_->workingScheme().external.zones.front().color.ac, kEditedColor);
+    QCOMPARE(controller_->config().activeSchemeName, std::string("Alpha"));
+
+    // The deletion itself did persist.
+    QVERIFY(controller_->config().findScheme("Beta") == nullptr);
+    QVERIFY(savedScheme("Beta").name.empty());
+    QCOMPARE(savedScheme("Alpha").external.zones.front().color.ac, (Rgb{0x10, 0, 0}));
+}
+
+// Deleting the selected scheme moves the selection to the default scheme: the draft goes
+// with it and the lights repaint the default in full.
+void TestEditingModel::deletingTheActiveSchemeFallsBackToTheDefaultAndRepaints() {
+    seedConfig({test::solidScheme("Alpha", Rgb{0x10, 0, 0}), defaultScheme()},
+               "Alpha");
+    makeController();
+    settle();
+
+    Scheme edited = controller_->workingScheme();
+    edited.keyboard.color = kEditedColor;
+    controller_->previewScheme(edited);
+    // Let the preview's keyboard write land before clearing, or it races the delete's
+    // repaint into the same record.
+    QTRY_VERIFY_WITH_TIMEOUT(effectWrites().size() == 1, 5000);
+    QVERIFY(controller_->hasUnsavedChanges());
+
+    record_->clear();
+    controller_->deleteScheme(QStringLiteral("Alpha"));
+
+    QCOMPARE(controller_->config().activeSchemeName, std::string(kDefaultSchemeName));
+    QVERIFY(!controller_->hasUnsavedChanges());
+    QCOMPARE(controller_->workingScheme().name, std::string(kDefaultSchemeName));
+
+    // The default scheme is repainted in full: every zone and the keyboard.
+    const Scheme fallback = defaultScheme();
+    QTRY_VERIFY_WITH_TIMEOUT(zoneWrites().size() == 4, 5000);
+    for (const test::DeviceRecord::ZoneWrite& write : zoneWrites())
+        QCOMPARE(write.ac, fallback.keyboard.color);
+    QTRY_VERIFY_WITH_TIMEOUT(effectWrites().size() == 1, 5000);
+    QCOMPARE(effectWrites().front().color, fallback.keyboard.color);
+
+    QVERIFY(controller_->config().findScheme("Alpha") == nullptr);
+    QVERIFY(savedScheme("Alpha").name.empty());
 }
 
 QTEST_GUILESS_MAIN(TestEditingModel)

@@ -30,8 +30,10 @@ class DeviceWorker;
 // it never writes a scheme back, so a colour-wheel drag cannot silently overwrite the
 // selected scheme. The draft becomes permanent only through an explicit gesture:
 // saveWorkingScheme() overwrites the selected scheme with it, saveWorkingSchemeAs() stores
-// it under a new name. Anything that moves the selection - activateScheme(), deleteScheme()
-// - or revertWorkingScheme() discards the draft and repaints the saved scheme in full.
+// it under a new name. Anything that moves the selection - activateScheme(), or
+// deleteScheme() on the selected scheme - or revertWorkingScheme() discards the draft and
+// repaints the saved scheme in full. Deleting a scheme that is not selected touches only
+// the scheme list: the draft and the lights stay exactly as they were.
 class LightingController : public QObject {
     Q_OBJECT
 
