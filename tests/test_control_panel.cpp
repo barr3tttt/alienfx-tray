@@ -40,6 +40,7 @@ class TestControlPanel : public QObject {
     void saveButtonPersistsTheDraft();
     void revertButtonRestoresTheScheme();
     void closingThePanelRevertsUnsavedEdits();
+    void minimizingThePanelKeepsTheDraft();
     void activatingFromTheSchemeListDiscardsTheDraft();
 
    private:
@@ -225,6 +226,29 @@ void TestControlPanel::closingThePanelRevertsUnsavedEdits() {
 
     const LoadResult onDisk = loadConfig(configPath());
     QCOMPARE(onDisk.config.findScheme("Repro")->keyboard.color, kSeedColor);
+}
+
+// Minimising is the window system unmapping the panel, not the captain closing it: the
+// draft stays on the lights and in the panel, and restoring the window finds it intact.
+void TestControlPanel::minimizingThePanelKeepsTheDraft() {
+    seedConfig({test::solidScheme("Repro", kSeedColor)}, "Repro");
+    makePanel();
+    settle();
+
+    typeKeyboardColour("445566");
+    QTRY_VERIFY_WITH_TIMEOUT(stripVisible(), 5000);
+
+    record_->clear();
+    panel_->showMinimized();
+    QTRY_VERIFY_WITH_TIMEOUT(panel_->isMinimized(), 5000);
+    QTest::qWait(200);
+    QVERIFY(controller_->hasUnsavedChanges());
+    QCOMPARE(controller_->workingScheme().keyboard.color, (Rgb{0x44, 0x55, 0x66}));
+    QVERIFY(zoneWrites().empty());
+
+    panel_->showNormal();
+    QTRY_VERIFY_WITH_TIMEOUT(stripVisible(), 5000);
+    QVERIFY(controller_->hasUnsavedChanges());
 }
 
 void TestControlPanel::activatingFromTheSchemeListDiscardsTheDraft() {

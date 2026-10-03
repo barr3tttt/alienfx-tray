@@ -48,17 +48,17 @@ struct Config {
     bool removeScheme(const std::string& name);
 
     // Adds back any built-in scheme whose name is neither present nor deliberately removed,
-    // leaving everything else alone. Editing a scheme in place rewrites it, so without this
-    // a drag of the colour wheel would destroy a shipped preset with no way back short of
-    // deleting the config file. Never overwrites: a user scheme that shares a built-in name
-    // wins, and a name in removedBuiltins is not re-seeded at all.
+    // leaving everything else alone, so a shipped preset that goes missing from the file
+    // comes back without deleting the config. Never overwrites: a user scheme that shares a
+    // built-in name wins, and a name in removedBuiltins is not re-seeded at all.
     void restoreMissingBuiltins();
 
     [[nodiscard]] static Config defaults();
 };
 
-// Migrates a config written by an older schema to the current zone layout and stamps it with
-// the current version, so it runs once per file. Returns true if the config was upgraded.
+// Migrates a config written by an older schema to the current zone layout (and, from before
+// v4, restores built-in-named schemes to their shipped contents) and stamps it with the
+// current version, so it runs once per file. Returns true if the config was upgraded.
 [[nodiscard]] bool migrateConfig(Config& config);
 
 // Writes contents to source with ".bak" appended. Returns true if the write succeeded.
