@@ -57,7 +57,8 @@ struct Config {
 };
 
 // Migrates a config written by an older schema to the current zone layout (and, from before
-// v4, restores built-in-named schemes to their shipped contents) and stamps it with the
+// v4, restores built-in-named schemes to their shipped contents; from before v5, renames
+// zones still carrying an old default name) and stamps it with the
 // current version, so it runs once per file. Returns true if the config was upgraded.
 [[nodiscard]] bool migrateConfig(Config& config);
 
