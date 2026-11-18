@@ -28,7 +28,8 @@ reason to reboot into Windows.
 - **Domain** - one of the two independent lighting controllers. `Keyboard` or `External`.
   They share no command vocabulary and fail independently.
 - **Zone** - one addressable light on the external controller, identified by its light ID.
-  The rear ring hairline LED is two independent zones (IDs 0 and 1).
+  The rear ring hairline LED is two independent zones (IDs 0 and 1), each driving a pair of
+  diagonal quadrants - not a left/right half.
 - **Scheme** - a named set of colours and brightnesses covering both domains.
 - **Draft** - what the lights currently show, held in `LightingController::working_`. Edits
   preview the draft and nothing else: a saved scheme changes only through
@@ -166,6 +167,12 @@ overwrite-save that could have made the change deliberate.
   so the laptop can run a stale binary while everything claims otherwise. Byte-compare
   after installing when the install must be current (`cmp build/alienfx-tray
   ~/.local/bin/alienfx-tray`); `--version` now prints the git revision for the same reason.
+- 2026-11-17: An agent harness's command timeout kills the whole process group, backgrounded
+  children included - a `flatpak run ... &` build died with "ninja: build stopped:
+  interrupted by user" the instant the wrapping call timed out. Launch long SDK builds
+  as `setsid nohup ... < /dev/null &` and poll the log file. The pre-configured build tree
+  makes the repro proof cheap: `git diff src/ > patch`, revert src/, rebuild, watch the new
+  tests fail, re-apply the patch, rebuild, watch them pass.
 
 ## Maintaining this file
 

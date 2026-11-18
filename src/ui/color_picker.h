@@ -24,7 +24,6 @@ class ColorWheel : public QWidget {
 
    signals:
     void colorChanged(const QColor& color);
-    void interactionFinished();
 
    protected:
     void paintEvent(QPaintEvent* event) override;
@@ -60,7 +59,6 @@ class ShadeBar : public QWidget {
 
    signals:
     void valueChanged(qreal value);
-    void interactionFinished();
 
    protected:
     void paintEvent(QPaintEvent* event) override;
@@ -77,8 +75,8 @@ class ShadeBar : public QWidget {
 };
 
 // Wheel plus shade bar plus a hex field, kept in sync. colorChanged fires continuously
-// during a drag and drives the live preview; colorCommitted fires once the user lets go and
-// is what writes the edit to disk, so a drag costs one write rather than one per pause in it.
+// during a drag and drives the live preview; nothing here writes anything to disk, so the
+// explicit Save gestures in the editing model stay the only route to a saved scheme.
 class ColorPicker : public QWidget {
     Q_OBJECT
 
@@ -90,7 +88,6 @@ class ColorPicker : public QWidget {
 
    signals:
     void colorChanged(const QColor& color);
-    void colorCommitted(const QColor& color);
 
    private:
     void applyColor(const QColor& color, bool fromHexField);

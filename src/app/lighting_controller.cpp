@@ -15,8 +15,17 @@ LightingController::LightingController(QObject* parent)
     : LightingController(new DeviceWorker, kApplyWatchdogMs, parent) {}
 
 LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs,
-                                       QObject* parent)
-    : QObject(parent), applyWatchdogMs_(applyWatchdogMs) {
+                                        QObject* parent)
+    : LightingController(worker, applyWatchdogMs,
+                          static_cast<int>(
+                              std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  kDeviceWaitTimeout)
+                                  .count()),
+                          parent) {}
+
+LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs,
+                                        int resumeWaitMs, QObject* parent)
+    : QObject(parent), applyWatchdogMs_(applyWatchdogMs), resumeWaitMs_(resumeWaitMs) {
     LoadResult loaded = loadConfig(configPath());
     config_ = std::move(loaded.config);
     if (!loaded.error.empty()) {
@@ -46,6 +55,8 @@ LightingController::LightingController(DeviceWorker* worker, int applyWatchdogMs
             &LightingController::onApplyFinished);
     connect(deviceThread_.get(), &DeviceThread::applyDeferred, this,
             &LightingController::onApplyDeferred);
+    connect(deviceThread_.get(), &DeviceThread::resumeRepaintStarted, this,
+            &LightingController::onResumeRepaintStarted);
 
     // Paint what the config says as soon as we are up.
     submitCurrent(ApplyDepth::Full);
@@ -168,9 +179,17 @@ void LightingController::setResumeWatched(bool watched) {
 
 void LightingController::onSystemResumed() {
     if (deviceThread_) deviceThread_->markResumed();
-    resumeWait_ = QDeadlineTimer(
-        std::chrono::duration_cast<std::chrono::milliseconds>(kDeviceWaitTimeout));
+    resumeWait_ = QDeadlineTimer(std::chrono::milliseconds(resumeWaitMs_));
     submitCurrent(ApplyDepth::Full);
+}
+
+void LightingController::onResumeRepaintStarted() {
+    // The worker is only now starting the device wait the resume deadline exists to cover.
+    // When the sleep hook's --apply held the lock first, the deadline set when the resume
+    // was first seen has often already expired by the time the repaint gets the lock, and
+    // a plain watchdog deadline would fire partway through a healthy wait (issue #12).
+    resumeWait_ = QDeadlineTimer(std::chrono::milliseconds(resumeWaitMs_));
+    armWatchdog();
 }
 
 void LightingController::updateUnsavedChanges() {

@@ -17,7 +17,7 @@ namespace alienfx {
 // persistence in firmware buys nothing and costs the property that makes this hardware safe
 // to experiment with at all - that a reboot always restores the factory default.
 struct Config {
-    static constexpr int kSchemaVersion = 4;
+    static constexpr int kSchemaVersion = 5;
 
     // The version the data was written in. Anything below kSchemaVersion still needs
     // migrateConfig before it matches the current zone layout.
@@ -57,7 +57,8 @@ struct Config {
 };
 
 // Migrates a config written by an older schema to the current zone layout (and, from before
-// v4, restores built-in-named schemes to their shipped contents) and stamps it with the
+// v4, restores built-in-named schemes to their shipped contents; from before v5, renames
+// zones still carrying an old default name) and stamps it with the
 // current version, so it runs once per file. Returns true if the config was upgraded.
 [[nodiscard]] bool migrateConfig(Config& config);
 

@@ -125,15 +125,18 @@ Observed on an m15 R7 AMD:
 The rear ring is driven by two light IDs, 0 and 1.  Before the colour-persistence
 fix a mono-colour probe of ID 0 appeared to do nothing because the colour washed
 out; once colours held, lighting either ID white produced a visible white ring.
-The application presents them as two separate zones ("Rear ring 1" and "Rear ring 2") so
-each segment can be coloured independently. The probe addresses them with distinct colours
-for identification.
+The application presents them as two separate zones so each pair of quadrants can be
+coloured independently, with the quadrant pairing named in the zone labels. The probe
+addresses them with distinct colours for identification.
 
 Observed 2026-10-03 with the four-colour probe: the two IDs are not halves of the ring.
 Each drives a pair of diagonal quadrants - ID 0 the top-left and bottom-right, ID 1 the
-other two. Also noted the same day: a pure red (255,0,0) reads orange on the ring's LEDs,
-while the logos render it red. The ring's channel response differs from the other
-fixtures; no correction is applied anywhere in the application.
+other two - and since the v5 schema the default zone labels say exactly that, so nobody
+expects a left/right split. Also noted the same day: a pure red (255,0,0) reads orange on
+the ring's LEDs, while the logos render it red. The ring's channel response differs from
+the other fixtures; no correction is applied anywhere in the application. A per-fixture
+correction, if one is ever wanted, belongs in the device layer and behind a fresh probe
+measurement - not guessed.
 
 IDs 4 and 5 accept commands and their power-state writes roll through the SDK's
 0x5b--0x60 loop, but they produce no visible light on this chassis, so the application does
@@ -144,7 +147,9 @@ own (v2->v3), and the original file is kept as `config.json.bak`. Configs writte
 schema version 4 additionally have the shipped contents of built-in-named schemes restored
 (v3->v4): the editing model before v4 wrote every manual edit into the selected scheme with
 no save gesture, so a built-in whose colours differ from the shipped ones was damaged by
-that write-through rather than edited on purpose.
+that write-through rather than edited on purpose. The v4->v5 migration renames zones still
+carrying an old default name to the current defaults, whose rear-ring labels name the
+diagonal quadrant pairing; a zone the user renamed keeps its name.
 
 ## Measured latencies
 

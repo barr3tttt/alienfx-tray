@@ -585,10 +585,10 @@ class TestConfig : public QObject {
         QCOMPARE(ext.zones.size(), std::size_t(4));
         // Zone 0's identity preserved, renamed to current default.
         QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring (top-left + bottom-right)"));
         QCOMPARE(ext.zones[0].color.ac, (Rgb{10, 20, 30}));
         QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
-        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring (top-right + bottom-left)"));
         QCOMPARE(ext.zones[1].color.ac, (Rgb{40, 50, 60}));
         QCOMPARE(ext.zones[2].lightId, std::uint8_t(2));
         QCOMPARE(ext.zones[3].lightId, std::uint8_t(3));
@@ -641,11 +641,34 @@ class TestConfig : public QObject {
         const ExternalSettings& ext = config.schemes.front().external;
         QCOMPARE(ext.zones.size(), std::size_t(3));
         QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring (top-left + bottom-right)"));
         QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
-        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring (top-right + bottom-left)"));
         QCOMPARE(ext.zones[2].lightId, std::uint8_t(2));
         QCOMPARE(ext.zones[2].name, std::string("The glowy thing"));
+    }
+
+    // v4 -> v5: the rear ring's zones are diagonal quadrant pairs, not halves, and the
+    // shipped labels now say so (issue #17). A v4 config still carrying the old default
+    // labels is renamed; a zone the user renamed keeps its name.
+    void migrationRenamesRearRingLabelsToQuadrantPairs() {
+        Config config;
+        config.schemaVersion = 4;
+        Scheme s;
+        s.name = "test";
+        s.external.zones.push_back(ExternalZone{0, "Rear ring 1", uniform(Rgb{1, 1, 1})});
+        s.external.zones.push_back(ExternalZone{1, "My half of the ring", uniform(Rgb{2, 2, 2})});
+        s.external.zones.push_back(ExternalZone{2, "Interior logo", uniform(Rgb{3, 3, 3})});
+        config.schemes.push_back(s);
+        config.activeSchemeName = "test";
+
+        QVERIFY(migrateConfig(config));
+
+        const ExternalSettings& ext = config.schemes.front().external;
+        QCOMPARE(ext.zones.size(), std::size_t(3));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring (top-left + bottom-right)"));
+        QCOMPARE(ext.zones[1].name, std::string("My half of the ring"));
+        QCOMPARE(ext.zones[2].name, std::string("Interior logo"));
     }
 
     // Running migration twice is safe - the second pass makes no changes.
@@ -668,9 +691,9 @@ class TestConfig : public QObject {
         const ExternalSettings& ext = config.schemes.front().external;
         QCOMPARE(ext.zones.size(), std::size_t(2));
         QCOMPARE(ext.zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(ext.zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(ext.zones[0].name, std::string("Rear ring (top-left + bottom-right)"));
         QCOMPARE(ext.zones[1].lightId, std::uint8_t(1));
-        QCOMPARE(ext.zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(ext.zones[1].name, std::string("Rear ring (top-right + bottom-left)"));
     }
 
     void migrationCreatesConfigBackup() {
@@ -738,10 +761,10 @@ class TestConfig : public QObject {
         const auto& zones = scheme->external.zones;
         QCOMPARE(zones.size(), std::size_t(4));
         QCOMPARE(zones[0].lightId, std::uint8_t(0));
-        QCOMPARE(zones[0].name, std::string("Rear ring 1"));
+        QCOMPARE(zones[0].name, std::string("Rear ring (top-left + bottom-right)"));
         QCOMPARE(zones[0].color.ac, (Rgb{255, 0, 0}));
         QCOMPARE(zones[1].lightId, std::uint8_t(1));
-        QCOMPARE(zones[1].name, std::string("Rear ring 2"));
+        QCOMPARE(zones[1].name, std::string("Rear ring (top-right + bottom-left)"));
         QCOMPARE(zones[2].name, std::string("Interior logo"));
         QCOMPARE(zones[3].name, std::string("Lid logo"));
     }
