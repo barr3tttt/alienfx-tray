@@ -150,7 +150,6 @@ void ColorWheel::mouseMoveEvent(QMouseEvent* event) {
 void ColorWheel::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton || !dragging_) return;
     dragging_ = false;
-    emit interactionFinished();
 }
 
 // --------------------------------------------------------------------------- shade bar ---
@@ -223,7 +222,6 @@ void ShadeBar::mouseMoveEvent(QMouseEvent* event) {
 void ShadeBar::mouseReleaseEvent(QMouseEvent* event) {
     if (event->button() != Qt::LeftButton || !dragging_) return;
     dragging_ = false;
-    emit interactionFinished();
 }
 
 // ----------------------------------------------------------------------------- picker ---
@@ -260,16 +258,11 @@ ColorPicker::ColorPicker(QWidget* parent) : QWidget(parent) {
         if (parsed.isValid()) applyColor(parsed, true);
     });
 
-    connect(wheel_, &ColorWheel::interactionFinished, this,
-            [this] { emit colorCommitted(color_); });
-    connect(shade_, &ShadeBar::interactionFinished, this,
-            [this] { emit colorCommitted(color_); });
     connect(hex_, &QLineEdit::editingFinished, this, [this] {
         // An entry the validator accepted but QColor could not parse - "bd93f" - never
-        // reached applyColor, so the field would otherwise keep showing a colour that was
-        // never applied while this commits the old one behind it.
+        // reached applyColor, so without this the field would keep claiming a colour that
+        // was never applied long after the user left it behind.
         showHex();
-        emit colorCommitted(color_);
     });
 
     setColor(color_);

@@ -22,6 +22,7 @@ DeviceThread::DeviceThread(DeviceWorker* worker, QObject* parent)
     connect(worker_, &DeviceWorker::statusChanged, this, &DeviceThread::statusChanged);
     connect(worker_, &DeviceWorker::applyFinished, this, &DeviceThread::applyFinished);
     connect(worker_, &DeviceWorker::applyDeferred, this, &DeviceThread::applyDeferred);
+    connect(worker_, &DeviceWorker::resumeRepaintStarted, this, &DeviceThread::resumeRepaintStarted);
 
     thread_->start();
 }
@@ -47,6 +48,11 @@ bool DeviceThread::stop(std::chrono::milliseconds limit) {
     if (worker_) {
         // An abandoned worker outlives us, so its signals have to stop pointing here first.
         worker_->disconnect(this);
+        // A resume repaint can be mid-wait with nothing else able to run on its thread, so
+        // the queued shutdown below would sit behind it until the stop expired its own
+        // timeout and abandoned the worker. Cancel the wait first: the poll returns, the
+        // shutdown runs, and the thread is joined rather than walked away from (issue #12).
+        worker_->cancelDeviceWait();
         // Queued, never blocking: a blocking invoke would wait on exactly the wedge this
         // type exists to survive.
         QMetaObject::invokeMethod(worker_, &DeviceWorker::shutdown, Qt::QueuedConnection);

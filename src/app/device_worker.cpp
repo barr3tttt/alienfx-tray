@@ -63,6 +63,8 @@ void DeviceWorker::setExternalStateSurvivesIdleRelease(bool survives) {
 
 void DeviceWorker::markResumed() { resumed_.store(true); }
 
+void DeviceWorker::cancelDeviceWait() { deviceWaitCancelled_.store(true); }
+
 quint64 DeviceWorker::submit(const ResolvedScheme& scheme, ApplyDepth depth) {
     quint64 generation = 0;
     {
@@ -130,8 +132,15 @@ ApplyResult DeviceWorker::repaintAfterResume(const ResolvedScheme& scheme) {
     engine_->releaseDevices();
     engine_->forgetAppliedState();
 
-    const ApplyResult result = applyDomainsWithRetry(*engine_, scheme, kDeviceWaitTimeout,
-                                                     kDeviceRetryInterval, std::cerr);
+    // The controller's resume deadline is re-armed from this moment rather than from when
+    // the resume was first seen: the sleep hook's --apply can have held the device lock for
+    // its own full poll in between, and the wait that needs the watchdog's patience is the
+    // one starting now (issue #12).
+    emit resumeRepaintStarted();
+
+    const ApplyResult result =
+        applyDomainsWithRetry(*engine_, scheme, kDeviceWaitTimeout, kDeviceRetryInterval,
+                              std::cerr, [this] { return deviceWaitCancelled_.load(); });
     for (Domain domain : kAllDomains) {
         const DomainStatus& status = result.forDomain(domain);
         if (!status.ok())

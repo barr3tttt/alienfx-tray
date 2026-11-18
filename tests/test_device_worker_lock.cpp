@@ -1,4 +1,5 @@
 #include <QDBusConnection>
+#include <QElapsedTimer>
 #include <QtTest>
 #include <QTemporaryDir>
 
@@ -171,6 +172,8 @@ class TestDeviceWorkerLock : public QObject {
     void withoutAResumeWatchEveryIdleReleaseRepaints();
     void aResumeRepaintsBothDomains();
     void aResumeWaitsForAControllerThatHasNotComeBackYet();
+    void aQuitDuringAResumePollStopsTheWorkerRatherThanAbandoningIt();
+    void aResumeRepaintThatStartsLateKeepsTheWatchdogOffItsHealthyWait();
     void theSleepMonitorReportsOnlyTheWayBackUp();
 
    private:
@@ -438,6 +441,106 @@ void TestDeviceWorkerLock::aResumeWaitsForAControllerThatHasNotComeBackYet() {
     QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() >= firstPaint * 2, 10000);
     QCOMPARE(painted_->opens.load(), opensBefore + kMissingPolls + 1);
     QTRY_VERIFY_WITH_TIMEOUT(controller.status(Domain::External).ok(), 5000);
+
+    controller.shutdown();
+}
+
+// The user quits the tray while the resume repaint is still waiting for a controller that
+// has not re-enumerated - the machine came back before the AW-ELC did, and the quit lands
+// inside the repaint's ten-second device wait. Nothing on the worker thread can run while
+// that poll holds it, so a shutdown posted behind it used to time out and abandon the
+// worker mid-poll (issue #12). The stop now cancels the wait: the shutdown runs, and the
+// thread is joined rather than walked away from.
+void TestDeviceWorkerLock::aQuitDuringAResumePollStopsTheWorkerRatherThanAbandoningIt() {
+    DeviceSet devices;
+    devices.keyboard = std::make_unique<CountingKeyboard>(painted_);
+    devices.external = std::make_unique<CountingExternal>(painted_);
+    LightingController controller(new StubWorker(std::move(devices), kShortIdleMs),
+                                  LightingController::kApplyWatchdogMs);
+    controller.setResumeWatched(true);
+
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() > 0 && !painted_->open.load(), 5000);
+    const int opensBeforeResume = painted_->opens.load();
+
+    // The controller never re-enumerates, so the resume repaint settles into its poll.
+    painted_->missingOpens.store(1000);
+    controller.onSystemResumed();
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->opens.load() >= opensBeforeResume + 1, 5000);
+
+    QElapsedTimer quit;
+    quit.start();
+    controller.shutdown();
+    QVERIFY2(quit.elapsed() < DeviceThread::kStopTimeout.count(),
+             qPrintable(QStringLiteral("shutdown spent %1 ms stuck behind the resume poll")
+                            .arg(quit.elapsed())));
+
+    // The thread was joined, not abandoned: an abandoned worker would still be polling,
+    // and its next attempt is only ever half a second away. The controller does not see
+    // the cancelled poll's final statuses - stop() drops the worker's signal relays
+    // before the poll unwinds, exactly as it does on a healthy quit - so what proves
+    // the poll stopped is that nothing further reaches the device.
+    const int opensAfterQuit = painted_->opens.load();
+    QTest::qWait(1500);
+    QCOMPARE(painted_->opens.load(), opensAfterQuit);
+    QVERIFY(!painted_->open.load());
+}
+
+// The other half of issue #12. With the sleep hook installed, its --apply holds the device
+// lock across its own poll, so the tray's resume repaint starts only once the lock frees -
+// by then the resume deadline the apply watchdog stretches by has long expired, and a plain
+// watchdog deadline fired partway through the repaint's healthy wait. The worker announces
+// the wait when it actually starts, so the stretch follows the wait being performed.
+void TestDeviceWorkerLock::aResumeRepaintThatStartsLateKeepsTheWatchdogOffItsHealthyWait() {
+    // Watchdog smaller than the repaint's wait below; resume deadline short enough that it
+    // expires before a frame deferred behind the hook can ever be repainted.
+    constexpr int kLocalWatchdogMs = 1250;
+    constexpr int kLocalResumeWaitMs = 700;
+    constexpr int kMissingAttempts = 3;
+
+    DeviceSet devices;
+    devices.keyboard = std::make_unique<CountingKeyboard>(painted_);
+    devices.external = std::make_unique<CountingExternal>(painted_);
+    LightingController controller(new StubWorker(std::move(devices), kShortIdleMs),
+                                  kLocalWatchdogMs, kLocalResumeWaitMs);
+
+    QTRY_VERIFY_WITH_TIMEOUT(painted_->zoneCalls.load() > 0 && !painted_->open.load(), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(asInt(controller.status(Domain::External).state),
+                              asInt(DeviceState::Ready), 5000);
+
+    // The sleep hook: another process holding the device lock across its own apply. The
+    // worker must have gone idle first, or its own lock hold blocks the hook from taking it.
+    ProcessLock resumeHook;
+    QTRY_VERIFY_WITH_TIMEOUT(resumeHook.acquire(std::chrono::milliseconds(50)), 5000);
+
+    QSignalSpy statuses(&controller, &LightingController::statusChanged);
+
+    // The machine resumes while the hook still holds the lock; the controller never
+    // re-enumerates right away, so the repaint that eventually runs must wait for it.
+    painted_->missingOpens.store(kMissingAttempts);
+    controller.onSystemResumed();
+
+    // The resume frame defers behind the hook - and the resume deadline expires while it
+    // waits: the deferred repaint cannot start before the hook lets go, and the hook's
+    // acquire timeout alone (DeviceWorker::kLockTimeoutMs, 750 ms) already outlives the
+    // 700 ms deadline armed when the resume was first seen.
+    QTRY_COMPARE_WITH_TIMEOUT(asInt(controller.status(Domain::External).state),
+                              asInt(DeviceState::Waiting), 5000);
+
+    resumeHook.release();
+
+    // The repaint now runs its device wait - the missing attempts, then the paint - and its
+    // completion is the Ready that follows the deferred Waiting.
+    QTRY_COMPARE_WITH_TIMEOUT(asInt(controller.status(Domain::External).state),
+                              asInt(DeviceState::Ready), 10000);
+    // Any watchdog that was going to fire inside the wait has had its chance by the time
+    // the repaint finished; let queued deliveries land before reading the spy.
+    QTest::qWait(100);
+
+    for (const QVariantList& emission : statuses) {
+        const DomainStatus status = emission.at(1).value<DomainStatus>();
+        QVERIFY2(asInt(status.state) != asInt(DeviceState::Unresponsive),
+                 "the watchdog fired inside the resume repaint's healthy device wait");
+    }
 
     controller.shutdown();
 }

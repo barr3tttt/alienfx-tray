@@ -55,6 +55,7 @@ class DeviceThread : public QObject {
     void statusChanged(alienfx::Domain domain, alienfx::DomainStatus status);
     void applyFinished(quint64 generation, bool allOk);
     void applyDeferred(quint64 generation);
+    void resumeRepaintStarted();
 
    private:
     QThread* thread_ = nullptr;

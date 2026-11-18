@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <iosfwd>
 #include <optional>
 #include <string>
@@ -63,11 +64,18 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
 // wait for a controller that has not re-enumerated yet - which on the resume path means
 // waiting at the unlock screen. Holding the keyboard claimed through that wait would leave
 // the machine unable to type for the whole of it.
+//
+// `cancelled` is polled between attempts and throughout the wait, never inside a device
+// command: a poll told to stop makes no further attempt, keeps every finished domain's
+// result, and returns what it has. The tray's shutdown sets it from the stopping thread so
+// the worker comes back promptly instead of running out its whole wait budget (issue #12);
+// the headless modes pass nothing and wait exactly as long as their own deadline says.
 [[nodiscard]] ApplyResult applyDomainsWithRetry(LightingEngine& engine,
                                                 const ResolvedScheme& scheme,
                                                 std::chrono::milliseconds pollTimeout,
                                                 std::chrono::milliseconds retryInterval,
-                                                std::ostream& err);
+                                                std::ostream& err,
+                                                const std::function<bool()>& cancelled = {});
 
 // Exactly what a probe run paints, with no device, no config file and no output involved.
 //

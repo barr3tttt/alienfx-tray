@@ -107,8 +107,9 @@ only way to learn which ID drives which fixture is to light one and look, so the
 lights IDs 0-3 in four distinct colours and you write down what you see. IDs 4-22 are not
 sent, so they keep whatever they were already showing. Pass a single ID (0-22) to light that
 one white with IDs 0-3 driven black, when a shared colour is ambiguous. The probe addresses
-raw hardware IDs; the rear ring's two segments are IDs 0 and 1, listed in the Zones tab as
-"Rear ring 1" and "Rear ring 2".
+raw hardware IDs; the rear ring's two zones are IDs 0 and 1. Each drives a pair of diagonal
+quadrants - ID 0 the top-left and bottom-right, ID 1 the other two - not a left/right half,
+and the shipped zone labels say so.
 
 ## Applying at login and after resume
 
@@ -119,7 +120,9 @@ up whatever was there first. The unit and the hook are not touched.
 
 A running tray also repaints on its own after a resume, listening for logind's
 `PrepareForSleep` on the system bus and waiting up to 10 seconds for the controllers to
-re-enumerate, so the hook is what covers the case where the tray is not running.
+re-enumerate, so the hook is what covers the case where the tray is not running. That
+wait is cancellable, so quitting the tray while it is still waiting never leaves the
+process stuck behind it.
 
 Note that a *user* systemd unit cannot handle resume: the user manager has no
 `suspend.target`, so such a unit silently never fires. The hook has to be at system level.

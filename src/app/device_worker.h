@@ -89,6 +89,15 @@ class DeviceWorker : public QObject {
     // effect before whatever is applied next, including a scheme already pending.
     void markResumed();
 
+    // Callable from any thread, and from the stopping thread specifically: asks an
+    // in-flight resume repaint to stop waiting for the controllers and return now. The
+    // poll can run to its full kDeviceWaitTimeout (10 s) with nothing else able to run on
+    // this thread, so a shutdown posted while it runs would otherwise be queued behind it
+    // until the whole wait is spent - and the stop path would expire its own timeout and
+    // abandon the worker mid-poll (issue #12). The stop path calls this before posting the
+    // queued shutdown, so the poll returns and the shutdown actually runs on the thread.
+    void cancelDeviceWait();
+
    public slots:
     // Runs on the worker thread once it starts.
     void initialise();
@@ -103,6 +112,14 @@ class DeviceWorker : public QObject {
     // still owed. Deliberately not applyFinished: nothing has been applied, and the apply
     // watchdog must not read a lock we are patiently waiting on as a wedged device thread.
     void applyDeferred(quint64 generation);
+
+    // The resume repaint is about to start waiting for the controllers to re-enumerate.
+    // That can be many seconds after the resume itself: with the sleep hook installed, its
+    // --apply holds the device lock across its own poll first, and the tray's repaint only
+    // runs once the lock frees. The controller re-arms its resume deadline from this
+    // moment, so the apply watchdog stretches over the wait actually being performed
+    // rather than one whose deadline has already expired (issue #12).
+    void resumeRepaintStarted();
 
    protected:
     // Built on the worker thread rather than by the constructor, because opening USB handles
@@ -142,6 +159,9 @@ class DeviceWorker : public QObject {
     std::atomic<bool> scheduled_{false};
     std::atomic<bool> externalStateSurvivesIdleRelease_{false};
     std::atomic<bool> resumed_{false};
+    // Set by cancelDeviceWait() from the stopping thread; read by the resume poll between
+    // attempts and throughout its wait.
+    std::atomic<bool> deviceWaitCancelled_{false};
     bool shuttingDown_ = false;
 
     DomainStatus lastKeyboardStatus_;

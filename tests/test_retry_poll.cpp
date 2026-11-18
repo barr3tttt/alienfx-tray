@@ -1,8 +1,11 @@
 #include <QtTest>
+#include <QElapsedTimer>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <sstream>
+#include <thread>
 
 #include "app/apply_mode.h"
 #include "core/lighting_engine.h"
@@ -74,6 +77,7 @@ class TestRetryPoll : public QObject {
     void aSucceededDomainIsNeverReapplied();
     void aControllerThatComesBackLateIsStillPainted();
     void aRefusedCommandIsNotRetried();
+    void aCancelledPollStopsWaitingRatherThanRunningOutItsBudget();
 
    private:
     static constexpr auto kPollTimeout = std::chrono::milliseconds(300);
@@ -155,6 +159,51 @@ void TestRetryPoll::aRefusedCommandIsNotRetried() {
     QCOMPARE(keyboardView->brightnessCalls.size(), std::size_t(1));
     QVERIFY2(!engine.isDeviceOpen(Domain::Keyboard),
              "a domain that failed for good still held its interface");
+}
+
+// The tray's shutdown needs the worker thread back, not on time but promptly: the resume
+// repaint can sit in this poll for its whole ten-second device-wait budget, and without a
+// way to break the wait the stop would expire its own timeout and abandon the worker
+// mid-poll (issue #12). The cancellation is checked between attempts and throughout the
+// wait, so a poll told to stop returns almost at once and makes no further attempt.
+void TestRetryPoll::aCancelledPollStopsWaitingRatherThanRunningOutItsBudget() {
+    auto keyboard = std::make_unique<FakeKeyboardDevice>();
+    auto external = std::make_unique<FakeExternalDevice>();
+    FakeExternalDevice* externalView = external.get();
+    external->failOpen = true;  // Busy: a state the poll keeps waiting on
+
+    LightingEngine engine(std::move(keyboard), std::move(external));
+
+    std::atomic<bool> cancelled{false};
+
+    // The poll runs on its own thread the way the worker's does, and the cancellation
+    // arrives from outside it the way DeviceThread::stop delivers one.
+    std::jthread poll([&] {
+        std::ostringstream err;
+        static_cast<void>(applyDomainsWithRetry(engine, lit(), kPollTimeout, kRetryInterval,
+                                                 err, [&] { return cancelled.load(); }));
+    });
+
+    // Wait until the poll is genuinely mid-wait - one attempt made, another due - then
+    // cancel well inside its budget. An uncancellable poll would still owe most of that
+    // budget when the cancellation lands, which is what the bound below catches.
+    const auto sawRetries = std::chrono::steady_clock::now() + kPollTimeout * 4;
+    while (externalView->openCount < 2 && std::chrono::steady_clock::now() < sawRetries)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    QVERIFY2(externalView->openCount >= 2, "the poll never started retrying");
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    cancelled.store(true);
+    poll.join();
+    QVERIFY2(elapsed.elapsed() < kPollTimeout.count() / 2,
+             qPrintable(QStringLiteral("the cancelled poll spent %1 ms coming back")
+                            .arg(elapsed.elapsed())));
+
+    // And nothing more reached the device after the cancellation.
+    const int attempts = externalView->openCount;
+    std::this_thread::sleep_for(kRetryInterval * 4);
+    QCOMPARE(externalView->openCount, attempts);
 }
 
 QTEST_GUILESS_MAIN(TestRetryPoll)

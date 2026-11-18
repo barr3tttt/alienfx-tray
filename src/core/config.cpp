@@ -234,7 +234,7 @@ bool isOldDefaultName(const std::string& name) {
         "Unidentified (ID 4)", "Unidentified (ID 5)",
         "Rear ring (zone 0)", "Rear ring (zone 1)",
         "No visible light (zone 4)", "No visible light (zone 5)",
-        "Rear ring",
+        "Rear ring", "Rear ring 1", "Rear ring 2",
     };
     return std::ranges::find(olds, name) != std::end(olds);
 }
@@ -277,7 +277,10 @@ bool migrateConfig(Config& config) {
             }
         }
 
-        // Rename zones whose names match an old default to the current default.
+        // Rename zones whose names match an old default to the current default. This is also
+        // the whole of v4 -> v5: the rear ring's zones are diagonal quadrant pairs, not
+        // halves, and the defaults now say so (issue #17). A zone the user renamed keeps its
+        // name - only the shipped labels move.
         for (ExternalZone& zone : zones) {
             if (isOldDefaultName(zone.name)) zone.name = defaultZoneName(zone.lightId);
         }

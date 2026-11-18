@@ -45,6 +45,13 @@ class LightingController : public QObject {
     // layer whose apply never returns, without hardware and without a six-second wait.
     LightingController(DeviceWorker* worker, int applyWatchdogMs, QObject* parent = nullptr);
 
+    // The same, with the resume deadline (see resumeWait_) stated in milliseconds rather
+    // than taken from kDeviceWaitTimeout. A seam for the same reason as applyWatchdogMs:
+    // the contention case it covers - the sleep hook holding the device lock while the
+    // resume deadline runs out - takes ten real seconds to stage otherwise (issue #12).
+    LightingController(DeviceWorker* worker, int applyWatchdogMs, int resumeWaitMs,
+                       QObject* parent = nullptr);
+
     ~LightingController() override;
 
     // If an apply has not come back in this long the controller is assumed wedged and the
@@ -129,6 +136,9 @@ class LightingController : public QObject {
     void onWorkerStatus(alienfx::Domain domain, alienfx::DomainStatus status);
     void onApplyFinished(quint64 generation, bool allOk);
     void onApplyDeferred(quint64 generation);
+    // The worker is only now starting the resume repaint's device wait; see
+    // DeviceWorker::resumeRepaintStarted.
+    void onResumeRepaintStarted();
     void saveConfigNow();
     void onApplyWatchdog();
 
@@ -155,8 +165,14 @@ class LightingController : public QObject {
     // must not disarm the watchdog the apply after it is relying on.
     quint64 pendingGeneration_ = 0;
     int applyWatchdogMs_ = kApplyWatchdogMs;
+    // How long a resume stretches the apply deadlines, in milliseconds; see resumeWait_.
+    // Stated by the constructors rather than defaulted here, so this header does not have
+    // to reach into apply_mode.h for kDeviceWaitTimeout.
+    int resumeWaitMs_ = 0;
     // Until this expires the worker may be waiting for the controllers to come back from a
-    // suspend, and every apply deadline is stretched by what is left of that wait.
+    // suspend, and every apply deadline is stretched by what is left of that wait. Re-armed
+    // when the worker actually starts the resume repaint, which can be many seconds after
+    // the resume signal itself when the sleep hook held the device lock first.
     QDeadlineTimer resumeWait_{0};
 
     std::unique_ptr<DeviceThread> deviceThread_;

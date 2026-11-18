@@ -63,6 +63,12 @@ struct RunOutcome {
     ApplyResult result{};
 };
 
+// How finely the wait between attempts is sliced when a poll can be cancelled: the poll
+// notices a cancellation within one slice rather than a whole retry interval, because the
+// tray's shutdown is waiting on the thread this poll runs on (issue #12). Never larger than
+// the interval itself, so a test's short interval is not stretched.
+constexpr std::chrono::milliseconds kCancelWaitStepMs{50};
+
 // Four unmistakable, well-separated colours for the hardware IDs known to drive visible
 // lights. IDs 0 and 1 both drive the rear ring; each gets its own colour so the probe makes
 // the double-drive visible. IDs 4 and 5 are not probed - they light nothing.
@@ -220,12 +226,19 @@ int runProbeExternalMode(std::optional<int> singleLightId, std::ostream& out,
 }
 
 ApplyResult applyDomainsWithRetry(LightingEngine& engine, const ResolvedScheme& scheme,
-                                  std::chrono::milliseconds pollTimeout,
-                                  std::chrono::milliseconds retryInterval, std::ostream& err) {
+                                   std::chrono::milliseconds pollTimeout,
+                                   std::chrono::milliseconds retryInterval, std::ostream& err,
+                                   const std::function<bool()>& cancelled) {
     const auto deadline = std::chrono::steady_clock::now() + pollTimeout;
 
     ApplyResult result;
     for (int attempt = 1;; ++attempt) {
+        // Cancellation is honoured only between device commands, never inside one: an
+        // interrupted command would leave the controller mid-transaction. The check sits
+        // before the attempt rather than after the wait, so a poll told to stop makes no
+        // further attempt at all (issue #12).
+        if (cancelled && cancelled()) break;
+
         for (Domain domain : kAllDomains) {
             DomainStatus& status = result.forDomain(domain);
             if (!mightStillComeGood(status.state)) continue;
@@ -249,7 +262,16 @@ ApplyResult applyDomainsWithRetry(LightingEngine& engine, const ResolvedScheme& 
         if (!anyPending || std::chrono::steady_clock::now() >= deadline) break;
 
         err << "alienfx-tray: attempt " << attempt << " incomplete, retrying\n";
-        std::this_thread::sleep_for(retryInterval);
+        if (cancelled) {
+            // Sliced, not whole: most of every retry cycle is this sleep, and the tray's
+            // shutdown must not wait a full interval on top of everything else.
+            const auto step = std::min(kCancelWaitStepMs, retryInterval);
+            for (std::chrono::milliseconds slept{0}; slept < retryInterval && !cancelled();
+                 slept += step)
+                std::this_thread::sleep_for(step);
+        } else {
+            std::this_thread::sleep_for(retryInterval);
+        }
     }
     return result;
 }

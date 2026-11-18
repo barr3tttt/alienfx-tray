@@ -80,8 +80,10 @@ struct Scheme {
 // visible four zones.
 //
 // IDs 0 and 1 both drive the rear ring hairline LED. They are independent hardware IDs that
-// each light a different segment of the ring, shown as "Rear ring 1" and "Rear ring 2".
-// 6-22 remain reachable through the config file for anyone probing a different chassis.
+// each light a different pair of diagonal quadrants of the ring - not halves: ID 0 the
+// top-left and bottom-right, ID 1 the other two - and the zone labels say so, so nobody
+// expects a left/right split. 6-22 remain reachable through the config file for anyone
+// probing a different chassis.
 inline constexpr std::uint8_t kExternalLightIdCount = 23;
 inline constexpr std::uint8_t kDefaultExternalLightIds[] = {0, 1, 2, 3};
 
@@ -107,12 +109,12 @@ struct ZoneProfile {
 // Established by lighting each ID on an Alienware m15 R7 AMD and asking the owner what
 // changed. The observations behind each entry are in docs/hardware-notes.md.
 //
-// The four visible zones: Rear ring hairline LED, two segments (hardware IDs 0 and 1),
-// Interior logo (ID 2), and Lid logo (ID 3). Hardware IDs 4 and 5 light nothing visible
-// and are not listed.
+// The four visible zones: Rear ring hairline LED, two diagonal quadrant pairs (hardware
+// IDs 0 and 1), Interior logo (ID 2), and Lid logo (ID 3). Hardware IDs 4 and 5 light
+// nothing visible and are not listed.
 inline constexpr ZoneProfile kExternalZoneProfiles[] = {
-    {0, "Rear ring 1", ZoneConfidence::Confirmed},
-    {1, "Rear ring 2", ZoneConfidence::Confirmed},
+    {0, "Rear ring (top-left + bottom-right)", ZoneConfidence::Confirmed},
+    {1, "Rear ring (top-right + bottom-left)", ZoneConfidence::Confirmed},
     {2, "Interior logo", ZoneConfidence::Confirmed},
     {3, "Lid logo", ZoneConfidence::Confirmed},
 };
@@ -123,8 +125,8 @@ inline constexpr ZoneProfile kExternalZoneProfiles[] = {
 // for a settled fact.
 [[nodiscard]] std::string defaultZoneName(std::uint8_t lightId);
 
-// Each logical zone maps to one hardware light ID. The rear ring segments (IDs 0 and 1) are
-// independent zones with separate hardware IDs.
+// Each logical zone maps to one hardware light ID. The rear ring's quadrant pairs (IDs 0
+// and 1) are independent zones with separate hardware IDs.
 [[nodiscard]] std::vector<std::uint8_t> zoneHardwareIds(const ExternalZone& zone);
 
 // The distinct hardware IDs across all zones in a settings set, for the brightness command
